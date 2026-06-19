@@ -174,7 +174,7 @@
         .otp-box:focus { border-color: #4facfe; box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.18); }
 
         /* ===== صفحه اصلی ===== */
-        .home-screen { padding: 24px 16px 110px; }
+        .home-screen { padding: 24px 16px 40px; }
 
         .container { max-width: 480px; margin: 0 auto; }
 
@@ -210,8 +210,8 @@
         /* شبکه آیکون‌ها مثل صفحه هوم آیفون */
         .app-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 14px;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
             margin-bottom: 28px;
         }
 
@@ -225,18 +225,19 @@
         }
 
         .app-icon {
-            width: 56px;
-            height: 56px;
+            width: 58px;
+            height: 58px;
             border-radius: 24%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 24px;
             position: relative;
             overflow: hidden;
             box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18), inset 0 1px 1px rgba(255, 255, 255, 0.45);
             transition: transform 0.12s;
         }
+
+        .app-icon svg { width: 26px; height: 26px; position: relative; z-index: 1; }
 
         .app-icon::after {
             content: '';
@@ -247,14 +248,13 @@
 
         .app-tile:active .app-icon { transform: scale(0.9); }
 
-        .app-icon.small { width: 44px; height: 44px; font-size: 19px; border-radius: 26%; }
-
         .icon-blue   { background: linear-gradient(135deg, #4facfe, #2563eb); }
         .icon-red    { background: linear-gradient(135deg, #ff6a6a, #c23b3b); }
         .icon-purple { background: linear-gradient(135deg, #a18cd1, #6c5ce7); }
         .icon-orange { background: linear-gradient(135deg, #ffb84d, #e8741f); }
         .icon-green  { background: linear-gradient(135deg, #5ee7df, #1f9d6e); }
         .icon-gray   { background: linear-gradient(135deg, #b8c4d6, #6b7d99); }
+        .icon-teal   { background: linear-gradient(135deg, #2dd4bf, #0d9488); }
 
         .app-tile span { font-size: 11.5px; font-weight: 600; color: var(--ink); text-align: center; }
 
@@ -279,25 +279,6 @@
         .sub-accounts.open { max-height: 320px; padding: 8px 18px 12px; border-top: 1px solid rgba(0, 0, 0, 0.05); }
         .sub-account { padding: 10px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.05); font-size: 13px; font-weight: 500; display: flex; justify-content: space-between; cursor: pointer; }
         .empty-sub { padding: 10px 0; font-size: 12px; color: var(--ink-soft); font-style: italic; }
-
-        /* داک پایین مثل آیفون */
-        .dock {
-            position: fixed;
-            bottom: 18px;
-            left: 16px;
-            right: 16px;
-            max-width: 420px;
-            margin: 0 auto;
-            border-radius: 32px;
-            padding: 12px 22px;
-            display: flex;
-            justify-content: space-around;
-            align-items: center;
-            z-index: 50;
-        }
-
-        .dock-item { cursor: pointer; }
-        .dock-item:active .app-icon { transform: scale(0.88); }
 
         /* صفحه جزئیات */
         .detail-page {
@@ -382,8 +363,33 @@
 
         .profile-info { background: rgba(255, 255, 255, 0.6); border-radius: var(--radius-md); padding: 14px; font-size: 13px; line-height: 1.9; margin-bottom: 14px; }
 
+        .form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+        .form-row label { font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+        .form-row input, .form-row select, .form-row textarea {
+            padding: 11px 14px; border-radius: var(--radius-sm); border: 1px solid rgba(0, 0, 0, 0.1);
+            background: rgba(255, 255, 255, 0.85); font-family: inherit; font-size: 14px; color: var(--ink);
+        }
+        .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .hint-text { font-size: 11.5px; color: var(--ink-soft); margin-top: -2px; margin-bottom: 8px; }
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: rgba(255,255,255,0.5); border-radius: var(--radius-sm); margin-bottom: 12px; }
+        .invoice-line { display: grid; grid-template-columns: 2.2fr 1fr 1fr 28px; gap: 8px; margin-bottom: 8px; align-items: center; }
+        .invoice-line input { padding: 9px 10px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.85); font-family: inherit; font-size: 13px; }
+        .line-remove { background: none; border: none; color: var(--expense); font-size: 18px; cursor: pointer; }
+
         @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        @keyframes popIn { from { transform: translate(-50%, -50%) scale(0.94); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+
+        /* در نسخه وب/دسکتاپ، شیت‌ها به‌صورت پاپ‌آپ وسط‌چین نشان داده می‌شوند نه تمام‌صفحه از پایین */
+        @media (min-width: 680px) {
+            .voucher-modal, .voice-modal, .sheet {
+                bottom: auto; left: 50%; right: auto; top: 50%;
+                transform: translate(-50%, -50%);
+                width: 92%; max-width: 460px; max-height: 86vh; overflow-y: auto;
+                border-radius: var(--radius-lg);
+                animation: popIn 0.18s ease;
+            }
+        }
     </style>
 </head>
 <body>
@@ -446,32 +452,45 @@
 
         <div class="app-grid">
             <div class="app-tile" id="openVoucherBtn">
-                <div class="app-icon icon-blue">📝</div>
+                <div class="app-icon icon-blue">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v4h4"/><line x1="8.5" y1="12" x2="15.5" y2="12"/><line x1="8.5" y1="15.5" x2="15.5" y2="15.5"/></svg>
+                </div>
                 <span>ثبت سند</span>
             </div>
             <div class="app-tile" id="voiceMainBtn">
-                <div class="app-icon icon-red"><span class="mic-icon-new"></span></div>
+                <div class="app-icon icon-red">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/><line x1="8" y1="21" x2="16" y2="21"/></svg>
+                </div>
                 <span>فرمان صوتی</span>
             </div>
+            <div class="app-tile" id="invoiceTile">
+                <div class="app-icon icon-teal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v19l-2.2-1.4L14 21l-2-1.4L10 21l-1.8-1.4L6 21V2z"/><line x1="8.7" y1="7" x2="15.3" y2="7"/><line x1="8.7" y1="10.5" x2="15.3" y2="10.5"/><line x1="8.7" y1="14" x2="13" y2="14"/></svg>
+                </div>
+                <span>فاکتور و پیش‌فاکتور</span>
+            </div>
             <div class="app-tile" id="pricingTile">
-                <div class="app-icon icon-purple">💎</div>
+                <div class="app-icon icon-purple">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l4-6h10l4 6-9 12L3 9z"/><path d="M3 9h18"/><path d="M9 3l3 6 3-6"/></svg>
+                </div>
                 <span>اشتراک من</span>
             </div>
+            <div class="app-tile" id="settingsTile">
+                <div class="app-icon icon-gray">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M2.5 12h3M18.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/></svg>
+                </div>
+                <span>تنظیمات</span>
+            </div>
             <div class="app-tile" id="profileTile">
-                <div class="app-icon icon-orange">👤</div>
+                <div class="app-icon icon-orange">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
+                </div>
                 <span>پروفایل</span>
             </div>
         </div>
 
         <div class="section-header"><h3>دسته‌بندی حسابداری</h3></div>
         <div id="categoriesList" class="categories-list"></div>
-    </div>
-
-    <div class="dock glass">
-        <div class="dock-item" id="dockVoucher"><div class="app-icon icon-blue small">📝</div></div>
-        <div class="dock-item" id="dockVoice"><div class="app-icon icon-red small"><span class="mic-icon-new"></span></div></div>
-        <div class="dock-item" id="dockReports"><div class="app-icon icon-green small">📊</div></div>
-        <div class="dock-item" id="dockProfile"><div class="app-icon icon-gray small">👤</div></div>
     </div>
 </div>
 
@@ -502,6 +521,101 @@
     <div class="modal-buttons">
         <button class="modal-btn" id="closeProfileBtn">بستن</button>
         <button class="modal-btn modal-btn-primary" id="logoutBtn">خروج از حساب</button>
+    </div>
+</div>
+
+<div id="settingsSheet" class="sheet">
+    <div class="modal-title">تنظیمات کسب‌وکار</div>
+
+    <div class="form-row">
+        <label>لوگوی کسب‌وکار (اختیاری)</label>
+        <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp">
+    </div>
+
+    <div class="form-row">
+        <label>نوع کسب‌وکار</label>
+        <select id="businessTypeSelect">
+            <option value="">انتخاب کنید...</option>
+            <option value="بازرگانی">بازرگانی</option>
+            <option value="تولیدی">تولیدی</option>
+            <option value="خدماتی">خدماتی</option>
+            <option value="پیمانکاری">پیمانکاری</option>
+            <option value="سایر">سایر</option>
+        </select>
+    </div>
+    <div class="hint-text">نمی‌دانید کدام مناسب کسب‌وکار شماست؟ توضیح بدهید تا هوش مصنوعی پیشنهاد بدهد:</div>
+    <div class="form-row">
+        <textarea id="businessDescInput" rows="2" placeholder="مثلاً: یک کافه کوچک دارم که قهوه و کیک می‌فروشم"></textarea>
+    </div>
+    <button class="modal-btn" id="classifyBusinessBtn" style="margin-bottom:6px;">🤖 پیشنهاد هوش مصنوعی</button>
+    <p id="classifyResult" class="hint-text" style="margin-bottom:14px;"></p>
+
+    <div class="form-row"><label>نام کسب‌وکار</label><input id="settingsBusinessName" type="text"></div>
+    <div class="form-row"><label>آدرس</label><input id="settingsAddress" type="text"></div>
+    <div class="form-grid-2">
+        <div class="form-row"><label>تلفن ثابت</label><input id="settingsPhoneOffice" type="text" dir="ltr"></div>
+        <div class="form-row"><label>موبایل</label><input id="settingsPhoneMobile" type="text" dir="ltr"></div>
+    </div>
+    <div class="form-grid-2">
+        <div class="form-row"><label>کد اقتصادی</label><input id="settingsEconomicCode" type="text" dir="ltr"></div>
+        <div class="form-row"><label>شناسه ملی</label><input id="settingsNationalId" type="text" dir="ltr"></div>
+    </div>
+    <div class="form-row"><label>شماره ثبت شرکت</label><input id="settingsRegNumber" type="text" dir="ltr"></div>
+    <div class="hint-text">همه فیلدهای بالا اختیاری هستند و فقط برای فاکتور رسمی استفاده می‌شوند.</div>
+
+    <div class="modal-buttons">
+        <button class="modal-btn" id="closeSettingsBtn">بستن</button>
+        <button class="modal-btn modal-btn-primary" id="saveSettingsBtn">ذخیره</button>
+    </div>
+</div>
+
+<div id="invoiceSheet" class="sheet">
+    <div class="modal-title">فاکتور و پیش‌فاکتور</div>
+
+    <div id="invoiceStepInput">
+        <textarea id="invoiceDescInput" rows="3" placeholder="مثال: فاکتور فروش به آقای رضایی، ۵ عدد میز ۸۰۰ هزار تومان، رسمی با ۹ درصد مالیات"></textarea>
+        <div class="voice-control">
+            <div class="voice-small-btn" id="invoiceMicBtn"><span class="mic-icon-new"></span> توضیح با صدا</div>
+        </div>
+        <div class="modal-buttons">
+            <button class="modal-btn" id="cancelInvoiceBtn">لغو</button>
+            <button class="modal-btn modal-btn-primary" id="parseInvoiceBtn">بررسی فاکتور</button>
+        </div>
+    </div>
+
+    <div id="invoiceStepReview" style="display:none;">
+        <div class="form-row">
+            <label>نوع سند</label>
+            <select id="reviewDocType"><option value="sale">فروش / پیش‌فاکتور</option><option value="purchase">خرید</option></select>
+        </div>
+        <div class="form-row"><label>نام طرف حساب</label><input id="reviewPartyName" type="text"></div>
+        <div class="form-row"><label>موبایل (اختیاری)</label><input id="reviewPartyMobile" type="text" dir="ltr"></div>
+
+        <label class="field-label">اقلام فاکتور</label>
+        <div id="reviewItemsList"></div>
+        <button class="modal-btn" type="button" id="addItemLineBtn" style="margin-bottom:10px;">+ افزودن قلم</button>
+
+        <div class="toggle-row">
+            <span>فاکتور رسمی (با مالیات بر ارزش‌افزوده)</span>
+            <input type="checkbox" id="reviewIsOfficial">
+        </div>
+        <div class="form-row" id="vatRateRow" style="display:none;">
+            <label>نرخ مالیات بر ارزش‌افزوده (٪)</label>
+            <input id="reviewVatRate" type="number" step="0.5" value="9">
+        </div>
+        <p id="missingInfoNote" class="hint-text"></p>
+        <div id="invoiceWarningBox" style="display:none; font-size:12.5px; color:#92400e; background:rgba(251,191,36,0.25); padding:12px; border-radius:14px; margin-bottom:10px; line-height:1.7;"></div>
+        <div id="invoiceTotalPreview" style="font-weight:700; margin: 10px 0;"></div>
+        <div class="modal-buttons">
+            <button class="modal-btn" id="backToInvoiceInputBtn">بازگشت</button>
+            <button class="modal-btn modal-btn-primary" id="confirmInvoiceBtn">ثبت نهایی</button>
+        </div>
+    </div>
+
+    <div id="invoiceStepDone" style="display:none;">
+        <p id="invoiceDoneMessage" style="margin-bottom:14px;"></p>
+        <a id="invoicePdfLink" href="#" target="_blank" class="modal-btn modal-btn-primary" style="display:block;text-align:center;text-decoration:none;margin-bottom:10px;">دانلود PDF فاکتور</a>
+        <button class="modal-btn" id="closeInvoiceDoneBtn">بستن</button>
     </div>
 </div>
 
@@ -590,7 +704,13 @@
                 document.getElementById('otpMobileLabel').textContent = mobile;
                 document.getElementById('phoneStep').style.display = 'none';
                 document.getElementById('otpStep').style.display = 'block';
-                document.querySelectorAll('.otp-box').forEach(b => b.value = '');
+                const boxes = document.querySelectorAll('.otp-box');
+                boxes.forEach(b => b.value = '');
+                if (data.dev_code) {
+                    showToast('🧪 حالت توسعه (بدون پیامک واقعی) — کد: ' + data.dev_code, false);
+                    data.dev_code.split('').forEach((ch, i) => { if (boxes[i]) boxes[i].value = ch; });
+                    document.getElementById('otpError').textContent = 'حالت توسعه: کد به‌صورت خودکار پر شد (پیامک واقعی متصل نیست).';
+                }
                 document.querySelector('.otp-box').focus();
                 startResendCountdown(60);
             } else {
@@ -817,7 +937,6 @@
         document.getElementById('voucherModal').classList.add('active');
     }
     document.getElementById('openVoucherBtn').onclick = openVoucherModal;
-    document.getElementById('dockVoucher').onclick = openVoucherModal;
 
     function closeVoucher() {
         document.getElementById('overlay').classList.remove('active');
@@ -893,7 +1012,6 @@
     voiceBtnMain.addEventListener('mouseup', stopVoiceRec);
     voiceBtnMain.addEventListener('touchstart', (e) => { e.preventDefault(); openVoiceModal(); startVoiceRec(); });
     voiceBtnMain.addEventListener('touchend', (e) => { e.preventDefault(); stopVoiceRec(); });
-    document.getElementById('dockVoice').onclick = () => { openVoiceModal(); };
     document.getElementById('closeVoiceBtn').onclick = closeVoiceModal;
 
     /* ===================== جزئیات حساب ===================== */
@@ -946,7 +1064,6 @@
         document.getElementById('profileSheet').classList.remove('active');
     }
     document.getElementById('profileTile').onclick = openProfileSheet;
-    document.getElementById('dockProfile').onclick = openProfileSheet;
     document.getElementById('closeProfileBtn').onclick = closeProfileSheet;
     document.getElementById('logoutBtn').onclick = async () => {
         await fetch('/logout');
@@ -954,11 +1071,271 @@
     };
 
     document.getElementById('pricingTile').onclick = () => { location.href = '/pricing'; };
-    document.getElementById('dockReports').onclick = () => {
-        document.querySelector('.section-header').scrollIntoView({ behavior: 'smooth' });
+
+    /* ===================== تنظیمات کسب‌وکار ===================== */
+    function openSettingsSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('settingsSheet').classList.add('active');
+        loadProfileIntoSettings();
+    }
+    function closeSettingsSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('settingsSheet').classList.remove('active');
+    }
+    async function loadProfileIntoSettings() {
+        try {
+            const res = await fetch('/profile/me');
+            const data = await res.json();
+            if (data.success) {
+                const p = data.profile;
+                document.getElementById('businessTypeSelect').value = p.business_type || '';
+                document.getElementById('settingsBusinessName').value = p.business_name || '';
+                document.getElementById('settingsAddress').value = p.address || '';
+                document.getElementById('settingsPhoneOffice').value = p.phone_office || '';
+                document.getElementById('settingsPhoneMobile').value = p.phone_mobile || '';
+                document.getElementById('settingsEconomicCode').value = p.economic_code || '';
+                document.getElementById('settingsNationalId').value = p.national_id || '';
+                document.getElementById('settingsRegNumber').value = p.company_registration_number || '';
+            }
+        } catch (e) {}
+    }
+    document.getElementById('settingsTile').onclick = openSettingsSheet;
+    document.getElementById('closeSettingsBtn').onclick = closeSettingsSheet;
+
+    document.getElementById('classifyBusinessBtn').onclick = async () => {
+        const desc = document.getElementById('businessDescInput').value.trim();
+        const resultEl = document.getElementById('classifyResult');
+        if (desc.length < 5) { resultEl.textContent = 'لطفاً کمی واضح‌تر توضیح دهید.'; return; }
+        resultEl.textContent = '🤖 در حال تحلیل...';
+        try {
+            const res = await fetch('/profile/classify-business', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'description=' + encodeURIComponent(desc)
+            });
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('businessTypeSelect').value = data.business_type;
+                resultEl.textContent = `✅ پیشنهاد: ${data.business_type}${data.reasoning ? ' — ' + data.reasoning : ''}`;
+            } else {
+                resultEl.textContent = msgOf(data, 'تشخیص ممکن نشد، لطفاً خودتان انتخاب کنید.');
+            }
+        } catch (e) { resultEl.textContent = 'خطا در ارتباط با سرور.'; }
     };
 
-    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); });
+    document.getElementById('logoInput').onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append('logo', file);
+        const res = await fetch('/profile/logo', { method: 'POST', body: fd });
+        const data = await res.json();
+        showToast(msgOf(data, 'خطا در آپلود لوگو'), !data.success);
+    };
+
+    document.getElementById('saveSettingsBtn').onclick = async () => {
+        const body = new URLSearchParams({
+            business_name: document.getElementById('settingsBusinessName').value,
+            business_type: document.getElementById('businessTypeSelect').value,
+            address: document.getElementById('settingsAddress').value,
+            phone_office: document.getElementById('settingsPhoneOffice').value,
+            phone_mobile: document.getElementById('settingsPhoneMobile').value,
+            economic_code: document.getElementById('settingsEconomicCode').value,
+            national_id: document.getElementById('settingsNationalId').value,
+            company_registration_number: document.getElementById('settingsRegNumber').value,
+        });
+        const res = await fetch('/profile/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body.toString()
+        });
+        const data = await res.json();
+        showToast(msgOf(data, 'ذخیره شد'), !data.success);
+        if (data.success) closeSettingsSheet();
+    };
+
+    /* ===================== فاکتور و پیش‌فاکتور (تشخیص هوشمند از متن/صدا) ===================== */
+    let invoiceDraftItems = [];
+
+    function openInvoiceSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('invoiceSheet').classList.add('active');
+        document.getElementById('invoiceStepInput').style.display = 'block';
+        document.getElementById('invoiceStepReview').style.display = 'none';
+        document.getElementById('invoiceStepDone').style.display = 'none';
+        document.getElementById('invoiceDescInput').value = '';
+        document.getElementById('invoiceWarningBox').style.display = 'none';
+        document.getElementById('confirmInvoiceBtn').textContent = 'ثبت نهایی';
+        pendingForceConfirm = false;
+    }
+    function closeInvoiceSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('invoiceSheet').classList.remove('active');
+    }
+    document.getElementById('invoiceTile').onclick = openInvoiceSheet;
+    document.getElementById('cancelInvoiceBtn').onclick = closeInvoiceSheet;
+    document.getElementById('closeInvoiceDoneBtn').onclick = closeInvoiceSheet;
+
+    function renderInvoiceItems() {
+        const c = document.getElementById('reviewItemsList');
+        c.innerHTML = invoiceDraftItems.map((it, idx) => `
+            <div class="invoice-line">
+                <input data-idx="${idx}" data-field="description" value="${(it.description || '').replace(/"/g, '&quot;')}" placeholder="شرح کالا/خدمت">
+                <input data-idx="${idx}" data-field="quantity" type="number" value="${it.quantity}" placeholder="تعداد">
+                <input data-idx="${idx}" data-field="unit_price" type="number" value="${it.unit_price}" placeholder="قیمت واحد">
+                <button class="line-remove" type="button" data-idx="${idx}">×</button>
+            </div>`).join('');
+        c.querySelectorAll('input').forEach(inp => {
+            inp.addEventListener('input', () => {
+                const idx = +inp.dataset.idx, field = inp.dataset.field;
+                invoiceDraftItems[idx][field] = field === 'description' ? inp.value : (parseFloat(inp.value) || 0);
+                updateInvoiceTotalPreview();
+            });
+        });
+        c.querySelectorAll('.line-remove').forEach(btn => {
+            btn.addEventListener('click', () => {
+                invoiceDraftItems.splice(+btn.dataset.idx, 1);
+                renderInvoiceItems();
+                updateInvoiceTotalPreview();
+            });
+        });
+    }
+
+    function updateInvoiceTotalPreview() {
+        const subtotal = invoiceDraftItems.reduce((s, it) => s + (it.quantity * it.unit_price), 0);
+        const isOfficial = document.getElementById('reviewIsOfficial').checked;
+        const vatRate = isOfficial ? (parseFloat(document.getElementById('reviewVatRate').value) || 0) : 0;
+        const vatAmount = subtotal * (vatRate / 100);
+        const total = subtotal + vatAmount;
+        document.getElementById('invoiceTotalPreview').textContent = isOfficial
+            ? `جمع: ${subtotal.toLocaleString()} + مالیات: ${vatAmount.toLocaleString()} = ${total.toLocaleString()} تومان`
+            : `جمع کل: ${subtotal.toLocaleString()} تومان (بدون مالیات)`;
+    }
+
+    document.getElementById('addItemLineBtn').onclick = () => {
+        invoiceDraftItems.push({ description: '', quantity: 1, unit: 'عدد', unit_price: 0 });
+        renderInvoiceItems();
+    };
+    document.getElementById('reviewIsOfficial').onchange = (e) => {
+        document.getElementById('vatRateRow').style.display = e.target.checked ? 'block' : 'none';
+        updateInvoiceTotalPreview();
+    };
+    document.getElementById('reviewVatRate').oninput = updateInvoiceTotalPreview;
+
+    function showInvoiceReview(draft) {
+        document.getElementById('invoiceStepInput').style.display = 'none';
+        document.getElementById('invoiceStepReview').style.display = 'block';
+        document.getElementById('reviewDocType').value = draft.document_type || 'sale';
+        document.getElementById('reviewPartyName').value = draft.party_name || '';
+        document.getElementById('reviewPartyMobile').value = draft.party_mobile || '';
+        document.getElementById('reviewIsOfficial').checked = !!draft.is_official;
+        document.getElementById('vatRateRow').style.display = draft.is_official ? 'block' : 'none';
+        document.getElementById('reviewVatRate').value = draft.vat_rate || 9;
+        invoiceDraftItems = (draft.items && draft.items.length) ? draft.items : [{ description: '', quantity: 1, unit: 'عدد', unit_price: 0 }];
+        renderInvoiceItems();
+        updateInvoiceTotalPreview();
+        const missing = draft.missing_info || [];
+        document.getElementById('missingInfoNote').textContent = missing.length ? ('⚠️ ' + missing.join(' | ')) : (draft.message || '');
+        document.getElementById('invoiceWarningBox').style.display = 'none';
+        document.getElementById('confirmInvoiceBtn').textContent = 'ثبت نهایی';
+        pendingForceConfirm = false;
+    }
+
+    document.getElementById('parseInvoiceBtn').onclick = async () => {
+        const text = document.getElementById('invoiceDescInput').value.trim();
+        if (text.length < 5) { showToast('لطفاً فاکتور را توضیح دهید', true); return; }
+        showToast('🤖 در حال تحلیل...', false);
+        try {
+            const res = await fetch('/invoice/parse', {
+                method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'text=' + encodeURIComponent(text)
+            });
+            const data = await res.json();
+            if (data.success) showInvoiceReview(data);
+            else showToast(msgOf(data, 'تشخیص ممکن نشد'), true);
+        } catch (e) { showToast('خطا در ارتباط با سرور', true); }
+    };
+
+    let invMediaRec, invAudioChunks = [];
+    async function startInvoiceVoiceRec() {
+        invAudioChunks = [];
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        invMediaRec = new MediaRecorder(stream);
+        invMediaRec.ondataavailable = e => invAudioChunks.push(e.data);
+        invMediaRec.onstop = async () => {
+            const blob = new Blob(invAudioChunks, { type: 'audio/webm' });
+            const fd = new FormData(); fd.append('voice', blob);
+            showToast('🤖 در حال پردازش صدا...', false);
+            try {
+                const resp = await fetch('/invoice/parse-voice', { method: 'POST', body: fd });
+                const data = await resp.json();
+                if (data.success) showInvoiceReview(data);
+                else showToast(msgOf(data, 'تشخیص ممکن نشد'), true);
+            } catch (e) { showToast('خطا در ارتباط با سرور', true); }
+            stream.getTracks().forEach(t => t.stop());
+        };
+        invMediaRec.start();
+        document.getElementById('invoiceMicBtn').classList.add('recording');
+    }
+    function stopInvoiceVoiceRec() {
+        if (invMediaRec && invMediaRec.state === 'recording') invMediaRec.stop();
+        document.getElementById('invoiceMicBtn').classList.remove('recording');
+    }
+    const invoiceMicBtn = document.getElementById('invoiceMicBtn');
+    invoiceMicBtn.addEventListener('mousedown', startInvoiceVoiceRec);
+    invoiceMicBtn.addEventListener('mouseup', stopInvoiceVoiceRec);
+    invoiceMicBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startInvoiceVoiceRec(); });
+    invoiceMicBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopInvoiceVoiceRec(); });
+
+    document.getElementById('backToInvoiceInputBtn').onclick = () => {
+        document.getElementById('invoiceStepReview').style.display = 'none';
+        document.getElementById('invoiceStepInput').style.display = 'block';
+        document.getElementById('invoiceWarningBox').style.display = 'none';
+        document.getElementById('confirmInvoiceBtn').textContent = 'ثبت نهایی';
+        pendingForceConfirm = false;
+    };
+
+    let pendingForceConfirm = false;
+    document.getElementById('confirmInvoiceBtn').onclick = async () => {
+        const partyName = document.getElementById('reviewPartyName').value.trim();
+        if (!partyName) { showToast('نام طرف حساب را وارد کنید', true); return; }
+        const validItems = invoiceDraftItems.filter(it => it.description && it.quantity > 0 && it.unit_price > 0);
+        if (!validItems.length) { showToast('حداقل یک قلم با تعداد و قیمت معتبر وارد کنید', true); return; }
+        const payload = {
+            document_type: document.getElementById('reviewDocType').value,
+            party_name: partyName,
+            party_mobile: document.getElementById('reviewPartyMobile').value.trim(),
+            is_official: document.getElementById('reviewIsOfficial').checked,
+            vat_rate: parseFloat(document.getElementById('reviewVatRate').value) || 0,
+            items: validItems,
+            force: pendingForceConfirm,
+        };
+        try {
+            const res = await fetch('/invoice/confirm', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            const warnBox = document.getElementById('invoiceWarningBox');
+            if (data.success) {
+                pendingForceConfirm = false;
+                warnBox.style.display = 'none';
+                document.getElementById('invoiceStepReview').style.display = 'none';
+                document.getElementById('invoiceStepDone').style.display = 'block';
+                document.getElementById('invoiceDoneMessage').textContent = data.message;
+                document.getElementById('invoicePdfLink').href = data.pdf_url;
+            } else if (data.warning) {
+                pendingForceConfirm = true;
+                warnBox.style.display = 'block';
+                warnBox.innerHTML = '⚠️ ' + data.message + '<br>' + (data.details || []).map(d => '• ' + d).join('<br>');
+                document.getElementById('confirmInvoiceBtn').textContent = 'با وجود هشدار، ثبت کن';
+            } else {
+                showToast(msgOf(data, 'خطا در ثبت فاکتور'), true);
+            }
+        } catch (e) { showToast('خطا در ارتباط با سرور', true); }
+    };
+
+    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); });
 
     checkAuthAndInit();
 </script>

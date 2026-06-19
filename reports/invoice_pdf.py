@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import jdatetime
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
@@ -27,7 +28,7 @@ class InvoicePDF:
         except:
             self.font_name = 'Helvetica'
     
-    def create_invoice_pdf(self, invoice_data: dict, filename: str = "invoice.pdf") -> str:
+    def create_invoice_pdf(self, invoice_data: dict, filename: str = "invoice.pdf", document_type: str = "sale") -> str:
         """ایجاد PDF پیش‌فاکتور"""
         doc = SimpleDocTemplate(filename, pagesize=A4)
         styles = getSampleStyleSheet()
@@ -67,36 +68,48 @@ class InvoicePDF:
                 pass
         
         # عنوان
-        story.append(Paragraph("پیش فاکتور", title_style))
+        invoice = invoice_data.get('invoice')
+        is_official = bool(getattr(invoice, 'is_official', False)) if invoice else False
+        if document_type == "purchase":
+            title = "فاکتور رسمی خرید" if is_official else "فاکتور خرید"
+        else:
+            title = "فاکتور رسمی فروش" if is_official else "پیش‌فاکتور"
+        story.append(Paragraph(title, title_style))
         story.append(Spacer(1, 0.5*cm))
-        
+
         # اطلاعات فروشنده
         if seller:
-            seller_info = f"""
-            <b>{seller.company_name}</b><br/>
-            آدرس: {seller.address or '-'}<br/>
-            تلفن: {seller.phone or '-'} | موبایل: {seller.mobile or '-'}<br/>
-            شناسه ملی: {seller.tax_id or '-'}
-            """
-            story.append(Paragraph(seller_info, persian_style))
+            seller_lines = [f"<b>{getattr(seller, 'company_name', '') or '-'}</b>"]
+            seller_lines.append(f"آدرس: {getattr(seller, 'address', '') or '-'}")
+            seller_lines.append(f"تلفن: {getattr(seller, 'phone', '') or '-'} | موبایل: {getattr(seller, 'mobile', '') or '-'}")
+            if getattr(seller, 'national_id', '') or getattr(seller, 'tax_id', ''):
+                seller_lines.append(f"شناسه ملی: {getattr(seller, 'national_id', '') or getattr(seller, 'tax_id', '') or '-'}")
+            if getattr(seller, 'economic_code', ''):
+                seller_lines.append(f"کد اقتصادی: {seller.economic_code}")
+            if getattr(seller, 'company_registration_number', ''):
+                seller_lines.append(f"شماره ثبت شرکت: {seller.company_registration_number}")
+            story.append(Paragraph("<br/>".join(seller_lines), persian_style))
             story.append(Spacer(1, 0.5*cm))
-        
+
         # اطلاعات مشتری
         customer = invoice_data.get('customer')
         if customer:
-            customer_info = f"""
-            <b>مشتری:</b> {customer.name}<br/>
-            تلفن: {customer.phone or '-'}
-            """
-            story.append(Paragraph(customer_info, persian_style))
+            party_label = "فروشنده/تامین‌کننده" if document_type == "purchase" else "مشتری"
+            party_phone = getattr(customer, 'mobile', None) or getattr(customer, 'phone', None) or '-'
+            customer_lines = [f"<b>{party_label}:</b> {customer.name}", f"تلفن: {party_phone}"]
+            party_national_id = getattr(invoice, 'buyer_national_id', None) or getattr(invoice, 'vendor_national_id', None) if invoice else None
+            party_economic_code = getattr(invoice, 'buyer_economic_code', None) or getattr(invoice, 'vendor_economic_code', None) if invoice else None
+            if party_national_id:
+                customer_lines.append(f"شناسه ملی: {party_national_id}")
+            if party_economic_code:
+                customer_lines.append(f"کد اقتصادی: {party_economic_code}")
+            story.append(Paragraph("<br/>".join(customer_lines), persian_style))
             story.append(Spacer(1, 0.5*cm))
-        
+
         # اطلاعات فاکتور
-        invoice = invoice_data.get('invoice')
         if invoice:
-            info_text = f"""
-            شماره فاکتور: {invoice.invoice_number} | تاریخ: {invoice.date.strftime('%Y-%m-%d')}
-            """
+            shamsi_date = jdatetime.date.fromgregorian(date=invoice.date.date()).strftime('%Y/%m/%d')
+            info_text = f"شماره فاکتور: {invoice.invoice_number} | تاریخ: {shamsi_date}"
             story.append(Paragraph(info_text, persian_style))
             story.append(Spacer(1, 0.5*cm))
         

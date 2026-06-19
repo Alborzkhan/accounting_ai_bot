@@ -4,13 +4,15 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import html
+import json
 import logging
 import secrets
+from types import SimpleNamespace
 from fastapi import FastAPI, Request, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 import shutil
 
@@ -24,7 +26,12 @@ from core.auth import AuthManager
 from core.license_manager import LicenseManager
 from core.payment_gateway import PaymentGateway
 from core.rate_limiter import rate_limit
+from core.invoice_generator import InvoiceGenerator
+from core.inventory_reconciler import InventoryReconciler
+from reports.invoice_pdf import InvoicePDF
 from ai_handlers.voice_to_accounting import VoiceToAccounting
+from ai_handlers.llm_processor import LLMProcessor
+from database.models import ProformaInvoice, PurchaseInvoice
 from config import ALLOWED_ORIGINS
 
 app = FastAPI(title="حسابدار هوشمند | نارین")
@@ -52,7 +59,12 @@ text_handler = TextCommandHandler(engine)
 auth_manager = AuthManager()
 license_manager = LicenseManager()
 payment_gateway = PaymentGateway()
+invoice_generator = InvoiceGenerator()
+inventory_reconciler = InventoryReconciler()
+invoice_pdf_maker = InvoicePDF()
+llm_processor = LLMProcessor()
 voice_handler = VoiceToAccounting(model_size="base")
+ALLOWED_BUSINESS_TYPES = {"بازرگانی", "تولیدی", "خدماتی", "پیمانکاری", "سایر"}
 
 
 def get_user_id(request: Request) -> Optional[int]:
@@ -220,6 +232,10 @@ async def pricing() -> HTMLResponse:
                 cursor: pointer;
             }
             .back-btn { background: #6c757d; margin-bottom: 16px; }
+            .discount-input {
+                width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid #ccc;
+                font-size: 13px; margin-bottom: 6px; box-sizing: border-box; font-family: inherit;
+            }
         </style>
     </head>
     <body>
@@ -231,6 +247,10 @@ async def pricing() -> HTMLResponse:
                 <p>۵۰ سند اول رایگان - ۳۰ روز</p>
                 <button onclick="alert('پلن آزمایشی فعال است')">فعال کردن</button>
             </div>
+            <div class="card">
+                <h3>🏷️ کد تخفیف (اختیاری)</h3>
+                <input id="discountCodeInput" class="discount-input" type="text" placeholder="کد تخفیف خود را وارد کنید" dir="ltr">
+            </div>
     """
     for key, plan in plans.items():
         if key != "free_trial":
@@ -239,11 +259,18 @@ async def pricing() -> HTMLResponse:
                 <h3>💰 {plan['name']}</h3>
                 <div class="price">{plan['price']:,} <small>تومان</small></div>
                 <p>{plan['description']}</p>
-                <button onclick="location.href='/payment/{key}'">خرید اشتراک</button>
+                <button onclick="payPlan('{key}')">خرید اشتراک</button>
             </div>
             """
     html_content += """
         </div>
+        <script>
+            function payPlan(planKey) {
+                const code = document.getElementById('discountCodeInput').value.trim();
+                const url = code ? `/payment/${planKey}?discount_code=${encodeURIComponent(code)}` : `/payment/${planKey}`;
+                location.href = url;
+            }
+        </script>
     </body>
     </html>
     """
@@ -253,7 +280,7 @@ async def pricing() -> HTMLResponse:
 # ========== PAYMENT ENDPOINTS ==========
 
 @app.get("/payment/{plan_type}")
-async def start_payment(request: Request, plan_type: str):
+async def start_payment(request: Request, plan_type: str, discount_code: str = ""):
     user_id = get_user_id(request)
     if not user_id:
         return RedirectResponse(url="/")
@@ -262,8 +289,18 @@ async def start_payment(request: Request, plan_type: str):
     if not plan or plan_type == "free_trial":
         return HTMLResponse("<h2>پلن نامعتبر است.</h2>", status_code=400)
     rate_limit(f"payment:{user_id}", max_requests=10, window_seconds=300)
+
+    final_price = plan["price"]
+    applied_code = ""
+    if discount_code:
+        discount_result = license_manager.validate_and_apply_discount(discount_code.strip(), plan_type, plan["price"])
+        if not discount_result["success"]:
+            return HTMLResponse(f"<h2>کد تخفیف نامعتبر است</h2><p>{html.escape(discount_result['message'])}</p><a href='/pricing'>بازگشت</a>", status_code=400)
+        final_price = discount_result["final_price"]
+        applied_code = discount_code.strip()
+
     try:
-        result = payment_gateway.create_payment_request(user_id, plan["price"], plan_type)
+        result = payment_gateway.create_payment_request(user_id, final_price, plan_type, discount_code=applied_code)
     except Exception:
         logger.exception("create_payment_request failed for user_id=%s plan=%s", user_id, plan_type)
         return HTMLResponse("<h2>خطا در شروع پرداخت. لطفاً بعداً تلاش کنید.</h2>", status_code=502)
@@ -300,7 +337,10 @@ async def request_otp(request: Request, mobile: str = Form(...)) -> JSONResponse
     client_ip = request.client.host if request.client else "unknown"
     rate_limit(f"otp_req_ip:{client_ip}", max_requests=10, window_seconds=600)
     result = auth_manager.request_otp(mobile)
-    return JSONResponse({"success": result["success"], "message": result["message"]})
+    payload = {"success": result["success"], "message": result["message"]}
+    if "dev_code" in result:
+        payload["dev_code"] = result["dev_code"]
+    return JSONResponse(payload)
 
 
 @app.post("/auth/verify-otp")
@@ -320,6 +360,265 @@ async def logout():
     resp = RedirectResponse(url="/")
     resp.set_cookie(key="auth_token", value="", expires=0, path="/")
     return resp
+
+
+# ========== PROFILE / SETTINGS ENDPOINTS ==========
+
+@app.get("/profile/me")
+async def profile_me(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    profile = auth_manager.get_user_profile(user_id)
+    if not profile:
+        return {"success": False, "message": "پروفایل یافت نشد."}
+    return {"success": True, "profile": profile}
+
+
+@app.post("/profile/update")
+async def profile_update(
+    request: Request,
+    name: Optional[str] = Form(None),
+    business_name: Optional[str] = Form(None),
+    business_type: Optional[str] = Form(None),
+    address: Optional[str] = Form(None),
+    phone_office: Optional[str] = Form(None),
+    phone_mobile: Optional[str] = Form(None),
+    economic_code: Optional[str] = Form(None),
+    national_id: Optional[str] = Form(None),
+    company_registration_number: Optional[str] = Form(None),
+) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    if business_type is not None and business_type != "" and business_type not in ALLOWED_BUSINESS_TYPES:
+        return {"success": False, "message": "نوع کسب‌وکار نامعتبر است."}
+    fields = {
+        "name": name, "business_name": business_name, "business_type": business_type,
+        "address": address, "phone_office": phone_office, "phone_mobile": phone_mobile,
+        "economic_code": economic_code, "national_id": national_id,
+        "company_registration_number": company_registration_number,
+    }
+    updates = {k: v for k, v in fields.items() if v is not None}
+    result = auth_manager.update_user_profile(user_id, **updates)
+    return result
+
+
+@app.post("/profile/logo")
+async def profile_logo(request: Request, logo: UploadFile = File(...)) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    ext = os.path.splitext(logo.filename or "")[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        return {"success": False, "message": "فرمت تصویر باید png، jpg یا webp باشد."}
+    logos_dir = os.path.join("static", "logos")
+    os.makedirs(logos_dir, exist_ok=True)
+    dest_path = os.path.join(logos_dir, f"user_{user_id}{ext}")
+    try:
+        with open(dest_path, "wb") as buffer:
+            shutil.copyfileobj(logo.file, buffer)
+    except Exception:
+        logger.exception("profile_logo upload failed for user_id=%s", user_id)
+        return {"success": False, "message": "خطا در ذخیره لوگو."}
+    auth_manager.update_user_profile(user_id, logo_path=dest_path)
+    return {"success": True, "message": "لوگو با موفقیت ذخیره شد.", "logo_path": "/" + dest_path.replace("\\", "/")}
+
+
+@app.post("/profile/classify-business")
+async def profile_classify_business(request: Request, description: str = Form(...)) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    rate_limit(f"classify:{user_id}", max_requests=10, window_seconds=300)
+    if not description or len(description.strip()) < 5:
+        return {"success": False, "message": "لطفاً کسب‌وکار خود را کمی واضح‌تر توضیح دهید."}
+    try:
+        result = llm_processor.classify_business_type(description.strip())
+    except Exception:
+        logger.exception("classify_business_type failed for user_id=%s", user_id)
+        return {"success": False, "message": "خطا در تشخیص نوع کسب‌وکار."}
+    return result
+
+
+# ========== INVOICE ENDPOINTS (تشخیص هوشمند از متن/صدا) ==========
+
+@app.post("/invoice/parse")
+async def invoice_parse(request: Request, text: str = Form(...)) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    rate_limit(f"invoice_parse:{user_id}", max_requests=20, window_seconds=300)
+    if not text or len(text.strip()) < 5:
+        return {"success": False, "message": "لطفاً فاکتور را کمی واضح‌تر توضیح دهید."}
+    try:
+        result = llm_processor.extract_invoice(text.strip())
+    except Exception:
+        logger.exception("extract_invoice failed for user_id=%s", user_id)
+        return {"success": False, "message": "خطا در تشخیص اطلاعات فاکتور."}
+    return result
+
+
+@app.post("/invoice/parse-voice")
+async def invoice_parse_voice(request: Request, voice: UploadFile = File(...)) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    rate_limit(f"invoice_parse_voice:{user_id}", max_requests=15, window_seconds=300)
+    safe_name = f"inv_{user_id}_{secrets.token_hex(8)}.webm"
+    temp_path = os.path.join("voice_temp", safe_name)
+    try:
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(voice.file, buffer)
+        transcript = voice_handler.transcribe_voice(temp_path)
+        result = llm_processor.extract_invoice(transcript)
+        result["transcript"] = transcript
+        return result
+    except Exception:
+        logger.exception("invoice_parse_voice failed for user_id=%s", user_id)
+        return {"success": False, "message": "خطا در پردازش صدا."}
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+@app.post("/invoice/confirm")
+async def invoice_confirm(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    rate_limit(f"invoice_confirm:{user_id}", max_requests=20, window_seconds=300)
+    try:
+        payload = await request.json()
+    except Exception:
+        return {"success": False, "message": "درخواست نامعتبر است."}
+
+    document_type = payload.get("document_type") if payload.get("document_type") in ("sale", "purchase") else "sale"
+    party_name = (payload.get("party_name") or "").strip()
+    party_mobile = (payload.get("party_mobile") or "").strip()
+    is_official = bool(payload.get("is_official", False))
+    vat_rate = payload.get("vat_rate") or 0
+    items = payload.get("items") or []
+    description = (payload.get("description") or "").strip()
+    buyer_national_id = (payload.get("buyer_national_id") or "").strip()
+    buyer_economic_code = (payload.get("buyer_economic_code") or "").strip()
+
+    if not party_name:
+        return {"success": False, "message": "نام طرف حساب (مشتری/فروشنده) را وارد کنید."}
+    cleaned_items = []
+    for item in items:
+        try:
+            qty = float(item.get("quantity") or 0)
+            price = float(item.get("unit_price") or 0)
+            desc = str(item.get("description") or "").strip()
+        except (TypeError, ValueError):
+            continue
+        if not desc or qty <= 0 or price <= 0:
+            continue
+        cleaned_items.append({"description": desc, "quantity": qty, "unit": str(item.get("unit") or "عدد"), "unit_price": price})
+    if not cleaned_items:
+        return {"success": False, "message": "حداقل یک قلم با تعداد و قیمت معتبر لازم است."}
+
+    try:
+        vat_rate = float(vat_rate)
+    except (TypeError, ValueError):
+        vat_rate = 0
+    apply_vat = is_official and vat_rate > 0
+    force = bool(payload.get("force", False))
+
+    try:
+        if document_type == "sale" and is_official and not force:
+            warnings = inventory_reconciler.check_sale_items(user_id, cleaned_items)
+            if warnings:
+                return {
+                    "success": False,
+                    "warning": True,
+                    "message": "عدم تطبیق فروش رسمی با خرید رسمی ثبت‌شده برای این کالا(ها) شناسایی شد. آیا مطمئنید می‌خواهید این فاکتور را ثبت کنید؟",
+                    "details": warnings,
+                }
+
+        if document_type == "purchase":
+            party_id = invoice_generator.find_or_create_vendor(party_name, buyer_economic_code)
+            result = invoice_generator.create_purchase_invoice(
+                vendor_id=party_id,
+                items=cleaned_items,
+                description=description,
+                vat_rate=vat_rate,
+                apply_vat=apply_vat,
+                user_id=user_id,
+                vendor_national_id=buyer_national_id,
+                vendor_economic_code=buyer_economic_code,
+            )
+        else:
+            party_id = invoice_generator.find_or_create_customer(party_name, party_mobile)
+            result = invoice_generator.create_invoice(
+                customer_id=party_id,
+                items=cleaned_items,
+                description=description,
+                vat_rate=vat_rate,
+                apply_vat=apply_vat,
+                user_id=user_id,
+                document_type=document_type,
+                buyer_national_id=buyer_national_id,
+                buyer_economic_code=buyer_economic_code,
+            )
+        if not result["success"]:
+            return result
+
+        profile = auth_manager.get_user_profile(user_id) or {}
+        seller = SimpleNamespace(
+            company_name=profile.get("business_name") or profile.get("name") or "-",
+            address=profile.get("address", ""),
+            phone=profile.get("phone_office", ""),
+            mobile=profile.get("phone_mobile", ""),
+            national_id=profile.get("national_id", ""),
+            economic_code=profile.get("economic_code", ""),
+            company_registration_number=profile.get("company_registration_number", ""),
+            logo_path=profile.get("logo_path", ""),
+        )
+
+        invoices_dir = os.path.join("static", "invoices")
+        os.makedirs(invoices_dir, exist_ok=True)
+        pdf_path = os.path.join(invoices_dir, f"{result['invoice_number']}.pdf")
+
+        if document_type == "purchase":
+            invoice_data = invoice_generator.get_purchase_invoice(result["invoice_id"], user_id=user_id)
+            invoice_data["seller"] = seller
+            invoice_pdf_maker.create_invoice_pdf(invoice_data, pdf_path, document_type="purchase")
+            invoice_generator.set_purchase_pdf_path(result["invoice_id"], pdf_path)
+            result["pdf_url"] = f"/invoice/{result['invoice_id']}/pdf?type=purchase"
+        else:
+            invoice_data = invoice_generator.get_invoice(result["invoice_id"], user_id=user_id)
+            invoice_data["seller"] = seller
+            invoice_pdf_maker.create_invoice_pdf(invoice_data, pdf_path, document_type="sale")
+            invoice_generator.set_pdf_path(result["invoice_id"], pdf_path)
+            result["pdf_url"] = f"/invoice/{result['invoice_id']}/pdf"
+        return result
+    except Exception:
+        logger.exception("invoice_confirm failed for user_id=%s", user_id)
+        return {"success": False, "message": "خطا در ثبت فاکتور."}
+
+
+@app.get("/invoice/{invoice_id}/pdf")
+async def invoice_get_pdf(request: Request, invoice_id: int, type: str = "sale"):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"success": False, "message": "لطفاً وارد حساب خود شوید."}, status_code=401)
+    if type == "purchase":
+        data = invoice_generator.get_purchase_invoice(invoice_id, user_id=user_id)
+    else:
+        data = invoice_generator.get_invoice(invoice_id, user_id=user_id)
+    if not data or not data["invoice"].pdf_path or not os.path.exists(data["invoice"].pdf_path):
+        return JSONResponse({"success": False, "message": "فاکتور یافت نشد."}, status_code=404)
+    return FileResponse(data["invoice"].pdf_path, media_type="application/pdf", filename=f"{data['invoice'].invoice_number}.pdf")
+
+
+@app.get("/invoice/list")
+async def invoice_list(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    return {"success": True, "data": invoice_generator.list_invoices(user_id)}
 
 
 # ========== REPORT ENDPOINTS ==========
@@ -355,37 +654,125 @@ async def admin_panel(request: Request) -> HTMLResponse:
     user_id = get_user_id(request)
     if not user_id or not auth_manager.is_user_admin(user_id):
         return HTMLResponse(content="<h2>دسترسی غیرمجاز</h2><p>شما دسترسی ادمین ندارید.</p>", status_code=403)
-    users = auth_manager.get_all_users()
-    html_out = """<!DOCTYPE html>
-<html dir="rtl" lang="fa">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>پنل مدیریت | حسابدار هوشمند</title>
-<style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:'Segoe UI',Tahoma,sans-serif; background:#f5f5f5; padding:20px; }
-.header { background:linear-gradient(135deg,#1a4a6f,#0f2b3d); color:white; padding:20px; border-radius:12px; margin-bottom:20px; }
-table { width:100%; border-collapse:collapse; background:white; border-radius:12px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,0.1); }
-th { background:#1a4a6f; color:white; padding:12px; text-align:right; }
-td { padding:10px 12px; border-bottom:1px solid #eee; }
-tr:hover { background:#f0f7ff; }
-.badge { display:inline-block; padding:2px 8px; border-radius:20px; font-size:12px; }
-.badge-admin { background:#ffc107; color:#333; }
-.badge-user { background:#e9ecef; color:#555; }
-</style></head>
-<body>
-<div class="header"><h2>پنل مدیریت</h2><p>لیست کاربران سیستم</p></div>
-<table><tr><th>نام</th><th>موبایل</th><th>کسب‌وکار</th><th>نوع</th><th>دسترسی</th><th>تاریخ ثبت</th></tr>"""
-    for u in users:
-        role = "ادمین" if u["is_admin"] else "کاربر"
-        name = html.escape(u['name'])
-        mobile = html.escape(u['mobile'])
-        business_name = html.escape(u['business_name'])
-        business_type = html.escape(u['business_type'])
-        created_at = html.escape(u['created_at'])
-        badge_class = 'admin' if u['is_admin'] else 'user'
-        html_out += f"<tr><td>{name}</td><td>{mobile}</td><td>{business_name}</td><td>{business_type}</td><td><span class='badge badge-{badge_class}'>{role}</span></td><td>{created_at}</td></tr>"
-    html_out += "</table><br><a href='/' style='color:#1a4a6f;'>بازگشت به صفحه اصلی</a></body></html>"
-    return HTMLResponse(content=html_out)
+    with open("web_app/templates/admin.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
+
+@app.get("/admin/stats")
+async def admin_stats(request: Request) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    session = license_manager.Session()
+    try:
+        from database.license_models import Transaction, License, User
+        from sqlalchemy import func
+        total_revenue = session.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(Transaction.is_confirmed == True).scalar() or 0
+        total_users = session.query(func.count(User.id)).scalar() or 0
+        active_licenses = session.query(func.count(License.id)).filter(License.is_active == True).scalar() or 0
+        by_plan = dict(
+            session.query(License.plan_type, func.count(License.id))
+            .filter(License.is_active == True)
+            .group_by(License.plan_type).all()
+        )
+        thirty_days_ago = datetime.now() - timedelta(days=30)
+        new_users_30d = session.query(func.count(User.id)).filter(User.created_at >= thirty_days_ago).scalar() or 0
+        total_sale_invoices = session.query(func.count(ProformaInvoice.id)).scalar() or 0
+        total_purchase_invoices = session.query(func.count(PurchaseInvoice.id)).scalar() or 0
+        return {
+            "success": True,
+            "total_revenue": int(total_revenue),
+            "total_users": total_users,
+            "new_users_30d": new_users_30d,
+            "active_licenses": active_licenses,
+            "active_by_plan": by_plan,
+            "total_sale_invoices": total_sale_invoices,
+            "total_purchase_invoices": total_purchase_invoices,
+        }
+    finally:
+        session.close()
+
+
+@app.get("/admin/pricing")
+async def admin_pricing_list(request: Request) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    return {"success": True, "data": license_manager.get_pricing_plans(include_inactive=True)}
+
+
+@app.post("/admin/pricing/update")
+async def admin_pricing_update(
+    request: Request,
+    plan_key: str = Form(...),
+    name: Optional[str] = Form(None),
+    price: Optional[int] = Form(None),
+    months: Optional[int] = Form(None),
+    max_vouchers: Optional[int] = Form(None),
+    description: Optional[str] = Form(None),
+    is_active: Optional[bool] = Form(None),
+) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    fields = {"name": name, "price": price, "months": months, "max_vouchers": max_vouchers, "description": description, "is_active": is_active}
+    return license_manager.update_pricing_plan(plan_key, **{k: v for k, v in fields.items() if v is not None})
+
+
+@app.get("/admin/discounts")
+async def admin_discounts_list(request: Request) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    return {"success": True, "data": license_manager.list_discount_codes()}
+
+
+@app.post("/admin/discounts/create")
+async def admin_discounts_create(
+    request: Request,
+    code: Optional[str] = Form(""),
+    title: str = Form(...),
+    discount_type: str = Form("percent"),
+    discount_value: float = Form(...),
+    applicable_plan: Optional[str] = Form(""),
+    start_date: Optional[str] = Form(""),
+    end_date: Optional[str] = Form(""),
+    max_uses: int = Form(0),
+) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    if discount_type not in ("percent", "fixed"):
+        return {"success": False, "message": "نوع تخفیف نامعتبر است."}
+    sd = datetime.strptime(start_date, "%Y-%m-%d") if start_date else None
+    ed = datetime.strptime(end_date, "%Y-%m-%d") if end_date else None
+    return license_manager.create_discount_code(
+        code=(code or "").strip().upper(), title=title, discount_type=discount_type,
+        discount_value=discount_value, applicable_plan=(applicable_plan or "").strip(),
+        start_date=sd, end_date=ed, max_uses=max_uses,
+    )
+
+
+@app.post("/admin/discounts/toggle/{code_id}")
+async def admin_discounts_toggle(request: Request, code_id: int) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    return license_manager.toggle_discount_code(code_id)
+
+
+@app.get("/admin/logs")
+async def admin_logs(request: Request, lines: int = 200) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    log_path = os.path.join("logs", "app.log")
+    if not os.path.exists(log_path):
+        return {"success": True, "data": ""}
+    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+        all_lines = f.readlines()
+    return {"success": True, "data": "".join(all_lines[-lines:])}
+
 
 @app.get("/admin/license/{user_id}")
 async def admin_license(request: Request, user_id: int) -> dict:

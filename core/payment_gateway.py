@@ -20,7 +20,7 @@ class PaymentGateway:
         self.engine = init_db(db_path)
         self.Session = sessionmaker(bind=self.engine)
     
-    def create_payment_request(self, user_id: int, amount: int, plan_type: str, description: str = "اشتراک حسابدار هوشمند") -> Dict:
+    def create_payment_request(self, user_id: int, amount: int, plan_type: str, description: str = "اشتراک حسابدار هوشمند", discount_code: str = "") -> Dict:
         """ایجاد درخواست پرداخت و دریافت لینک زرین‌پال"""
         
         # مبلغ به تومان (زرین‌پال به ریال نیاز داره)
@@ -48,7 +48,7 @@ class PaymentGateway:
                 payment_url = ZARINPAL_START_PAY + authority
                 
                 # ذخیره تراکنش در دیتابیس
-                self._save_transaction(user_id, amount, plan_type, authority)
+                self._save_transaction(user_id, amount, plan_type, authority, discount_code)
                 
                 return {
                     "success": True,
@@ -119,7 +119,7 @@ class PaymentGateway:
         except Exception as e:
             return {"success": False, "message": f"خطا در تأیید پرداخت: {str(e)}"}
     
-    def _save_transaction(self, user_id: int, amount: int, plan_type: str, authority: str) -> int:
+    def _save_transaction(self, user_id: int, amount: int, plan_type: str, authority: str, discount_code: str = "") -> int:
         """ذخیره تراکنش در دیتابیس"""
         session = self.Session()
         try:
@@ -130,6 +130,7 @@ class PaymentGateway:
                 amount=amount,
                 plan_type=plan_type,
                 authority=authority,
+                discount_code=discount_code or None,
                 is_confirmed=False
             )
             session.add(transaction)

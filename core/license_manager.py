@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime, timedelta
 from sqlalchemy.orm import sessionmaker
 from database.models import init_db
-from database.license_models import User, License, Transaction
+from database.license_models import User, License, Transaction, PricingPlan, DiscountCode
 from database.models import JournalEntry
 import hashlib
 import secrets
@@ -19,28 +19,19 @@ class LicenseManager:
         self.Session = sessionmaker(bind=self.engine)
     
     def generate_license_key(self, user_id: int, plan_type: str) -> str:
-        """تولید لایسنس یکتا برای کاربر"""
+        """تولید لایسنس یکتا برای کاربر (مدت و سقف سند از جدول پلن‌های قیمت‌گذاری خوانده می‌شود)"""
         end_date = datetime.now()
-        max_vouchers = 0  # 0 = نامحدود
-        
-        if plan_type == "free_trial":
-            end_date += timedelta(days=30)
-            max_vouchers = 50
-        elif plan_type == "monthly":
-            end_date += timedelta(days=30)
-            max_vouchers = 0
-        elif plan_type == "quarterly":
-            end_date += timedelta(days=90)
-            max_vouchers = 0
-        elif plan_type == "semi_annual":
-            end_date += timedelta(days=180)
-            max_vouchers = 0
-        elif plan_type == "annual":
-            end_date += timedelta(days=365)
-            max_vouchers = 0
-        else:
-            end_date += timedelta(days=30)
-        
+
+        plan_session = self.Session()
+        try:
+            plan = plan_session.query(PricingPlan).filter_by(plan_key=plan_type).first()
+            months = plan.months if plan else 1
+            max_vouchers = plan.max_vouchers if plan else 0
+        finally:
+            plan_session.close()
+
+        end_date += timedelta(days=30 * months)
+
         random_part = secrets.token_hex(8)
         license_key = hashlib.sha256(
             f"{user_id}{plan_type}{random_part}{datetime.now()}".encode()
@@ -208,16 +199,122 @@ class LicenseManager:
             return {"allowed": False, "message": f"تعداد سندهای مجاز شما ({status['max_vouchers']} سند) به پایان رسیده. لطفاً اشتراک خود را تمدید کنید."}
         return {"allowed": True, "message": ""}
 
-    def get_pricing_plans(self) -> dict:
-        """دریافت لیست پلن‌های قیمتی"""
-        return {
-            "free_trial": {"name": "آزمایشی", "price": 0, "months": 1, "vouchers": 50, "description": "۵۰ سند اول رایگان"},
-            "monthly": {"name": "ماهانه", "price": 5000000, "months": 1, "vouchers": 0, "description": "نامحدود - ماهانه"},
-            "quarterly": {"name": "سه ماهه", "price": 13500000, "months": 3, "vouchers": 0, "description": "نامحدود - سه ماهه (۱۰٪ تخفیف)"},
-            "semi_annual": {"name": "شش ماهه", "price": 24000000, "months": 6, "vouchers": 0, "description": "نامحدود - شش ماهه (۲۰٪ تخفیف)"},
-            "annual": {"name": "سالانه", "price": 42000000, "months": 12, "vouchers": 0, "description": "نامحدود - سالانه (۳۰٪ تخفیف)"}
-        }
-    
+    def get_pricing_plans(self, include_inactive: bool = False) -> dict:
+        """دریافت لیست پلن‌های قیمتی از دیتابیس (قابل ویرایش توسط ادمین)"""
+        session = self.Session()
+        try:
+            query = session.query(PricingPlan)
+            if not include_inactive:
+                query = query.filter(PricingPlan.is_active == True)
+            plans = query.order_by(PricingPlan.months).all()
+            return {
+                p.plan_key: {
+                    "name": p.name, "price": p.price, "months": p.months,
+                    "vouchers": p.max_vouchers, "description": p.description or "",
+                    "is_active": p.is_active,
+                }
+                for p in plans
+            }
+        finally:
+            session.close()
+
+    def update_pricing_plan(self, plan_key: str, **fields) -> dict:
+        """ویرایش یک پلن قیمتی توسط ادمین"""
+        session = self.Session()
+        try:
+            plan = session.query(PricingPlan).filter_by(plan_key=plan_key).first()
+            if not plan:
+                return {"success": False, "message": "پلن یافت نشد."}
+            for key, value in fields.items():
+                if hasattr(plan, key) and value is not None:
+                    setattr(plan, key, value)
+            session.commit()
+            return {"success": True, "message": "پلن بروزرسانی شد."}
+        except Exception as e:
+            session.rollback()
+            return {"success": False, "message": f"خطا: {e}"}
+        finally:
+            session.close()
+
+    def list_discount_codes(self) -> list:
+        session = self.Session()
+        try:
+            codes = session.query(DiscountCode).order_by(DiscountCode.id.desc()).all()
+            return [{
+                "id": c.id, "code": c.code or "", "title": c.title or "",
+                "discount_type": c.discount_type, "discount_value": c.discount_value,
+                "applicable_plan": c.applicable_plan or "", "is_active": c.is_active,
+                "used_count": c.used_count, "max_uses": c.max_uses,
+                "start_date": c.start_date.strftime("%Y-%m-%d") if c.start_date else "",
+                "end_date": c.end_date.strftime("%Y-%m-%d") if c.end_date else "",
+            } for c in codes]
+        finally:
+            session.close()
+
+    def create_discount_code(self, code: str, title: str, discount_type: str, discount_value: float,
+                              applicable_plan: str = "", start_date: Optional[datetime] = None,
+                              end_date: Optional[datetime] = None, max_uses: int = 0) -> dict:
+        session = self.Session()
+        try:
+            if code and session.query(DiscountCode).filter_by(code=code).first():
+                return {"success": False, "message": "این کد تخفیف از قبل وجود دارد."}
+            entry = DiscountCode(
+                code=code or None, title=title, discount_type=discount_type,
+                discount_value=discount_value, applicable_plan=applicable_plan or None,
+                start_date=start_date, end_date=end_date, max_uses=max_uses,
+            )
+            session.add(entry)
+            session.commit()
+            return {"success": True, "message": "کد تخفیف ایجاد شد.", "id": entry.id}
+        except Exception as e:
+            session.rollback()
+            return {"success": False, "message": f"خطا: {e}"}
+        finally:
+            session.close()
+
+    def toggle_discount_code(self, code_id: int) -> dict:
+        session = self.Session()
+        try:
+            entry = session.query(DiscountCode).filter_by(id=code_id).first()
+            if not entry:
+                return {"success": False, "message": "کد یافت نشد."}
+            entry.is_active = not entry.is_active
+            session.commit()
+            return {"success": True, "is_active": entry.is_active}
+        finally:
+            session.close()
+
+    def validate_and_apply_discount(self, code: str, plan_key: str, base_price: int) -> dict:
+        """اعتبارسنجی کد تخفیف برای یک پلن مشخص و محاسبه قیمت نهایی"""
+        session = self.Session()
+        try:
+            entry = session.query(DiscountCode).filter_by(code=code, is_active=True).first()
+            if not entry:
+                return {"success": False, "message": "کد تخفیف نامعتبر است."}
+            now = datetime.now()
+            if entry.start_date and now < entry.start_date:
+                return {"success": False, "message": "این کد تخفیف هنوز فعال نشده است."}
+            if entry.end_date and now > entry.end_date:
+                return {"success": False, "message": "این کد تخفیف منقضی شده است."}
+            if entry.max_uses and entry.used_count >= entry.max_uses:
+                return {"success": False, "message": "ظرفیت استفاده از این کد تخفیف تمام شده است."}
+            if entry.applicable_plan and entry.applicable_plan != plan_key:
+                return {"success": False, "message": "این کد تخفیف برای این پلن قابل استفاده نیست."}
+
+            if entry.discount_type == "percent":
+                discount_amount = base_price * (entry.discount_value / 100)
+            else:
+                discount_amount = entry.discount_value
+            final_price = max(int(base_price - discount_amount), 0)
+
+            entry.used_count += 1
+            session.commit()
+
+            return {"success": True, "final_price": final_price, "discount_amount": int(discount_amount)}
+        finally:
+            session.close()
+
+
     def get_pricing_message(self) -> str:
         """دریافت متن قیمت‌گذاری برای نمایش به کاربر"""
         plans = self.get_pricing_plans()

@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple, Any
 from sqlalchemy.orm import sessionmaker
 from database.models import (
-    init_db, Customer, SellerProfile, 
-    ProformaInvoice, InvoiceItem
+    init_db, Customer, SellerProfile, Vendor,
+    ProformaInvoice, InvoiceItem, PurchaseInvoice, PurchaseItem
 )
 from core.seller_manager import SellerManager
 from core.product_manager import ProductManager
@@ -22,30 +22,79 @@ class InvoiceGenerator:
         self.product_manager = ProductManager(db_path)
         self.accounting_engine = AccountingEngine(db_path)
     
-    def get_next_invoice_number(self) -> str:
+    def get_next_invoice_number(self, user_id: Optional[int] = None) -> str:
         session = self.Session()
         try:
-            last_invoice = session.query(ProformaInvoice).order_by(
-                ProformaInvoice.id.desc()
-            ).first()
-            
+            query = session.query(ProformaInvoice)
+            if user_id is not None:
+                query = query.filter(ProformaInvoice.user_id == user_id)
+            last_invoice = query.order_by(ProformaInvoice.id.desc()).first()
+
             if last_invoice and last_invoice.invoice_number:
                 last_num = int(last_invoice.invoice_number.split('-')[-1])
                 new_num = last_num + 1
             else:
                 new_num = 1
-            
+
             return f"INV-{datetime.now().strftime('%Y%m')}-{new_num:04d}"
         finally:
             session.close()
-    
-    def create_invoice(
+
+    def find_or_create_customer(self, name: str, mobile: str = "") -> int:
+        """جستجوی مشتری با نام، یا ایجاد مشتری جدید در صورت نیافتن (بدون نیاز اجباری به شماره تماس)."""
+        session = self.Session()
+        try:
+            name = (name or "نامشخص").strip() or "نامشخص"
+            query = session.query(Customer).filter(Customer.name == name)
+            if mobile:
+                query = query.filter(Customer.mobile == mobile)
+            customer = query.first()
+            if customer:
+                return customer.id
+            customer = Customer(name=name, mobile=mobile or "")
+            session.add(customer)
+            session.commit()
+            return customer.id
+        finally:
+            session.close()
+
+    def find_or_create_vendor(self, name: str, economic_code: str = "") -> int:
+        """جستجوی فروشنده/تامین‌کننده با نام، یا ایجاد جدید در صورت نیافتن."""
+        session = self.Session()
+        try:
+            name = (name or "نامشخص").strip() or "نامشخص"
+            vendor = session.query(Vendor).filter(Vendor.name == name).first()
+            if vendor:
+                return vendor.id
+            vendor = Vendor(name=name, economic_code=economic_code or "")
+            session.add(vendor)
+            session.commit()
+            return vendor.id
+        finally:
+            session.close()
+
+    def get_next_purchase_number(self, user_id: Optional[int] = None) -> str:
+        session = self.Session()
+        try:
+            query = session.query(PurchaseInvoice)
+            if user_id is not None:
+                query = query.filter(PurchaseInvoice.user_id == user_id)
+            last = query.order_by(PurchaseInvoice.id.desc()).first()
+            new_num = int(last.invoice_number.split('-')[-1]) + 1 if last and last.invoice_number else 1
+            return f"PUR-{datetime.now().strftime('%Y%m')}-{new_num:04d}"
+        finally:
+            session.close()
+
+    def create_purchase_invoice(
         self,
-        customer_id: int,
+        vendor_id: int,
         items: List[Dict],
         description: str = "",
         vat_rate: float = 0.0,
-        apply_vat: bool = False
+        apply_vat: bool = False,
+        user_id: Optional[int] = None,
+        vendor_national_id: str = "",
+        vendor_economic_code: str = "",
     ) -> Dict:
         session = self.Session()
         try:
@@ -54,27 +103,124 @@ class InvoiceGenerator:
                 item_total = item['quantity'] * item['unit_price']
                 item['total'] = item_total
                 subtotal += item_total
-            
-            vat_amount = 0
-            if apply_vat and vat_rate > 0:
-                vat_amount = subtotal * (vat_rate / 100)
-            
+
+            vat_amount = subtotal * (vat_rate / 100) if apply_vat and vat_rate > 0 else 0
             total = subtotal + vat_amount
-            
-            invoice = ProformaInvoice(
-                invoice_number=self.get_next_invoice_number(),
+
+            purchase = PurchaseInvoice(
+                invoice_number=self.get_next_purchase_number(user_id),
                 date=datetime.now(),
-                customer_id=customer_id,
+                vendor_id=vendor_id,
+                user_id=user_id,
                 subtotal=subtotal,
                 vat_rate=vat_rate if apply_vat else 0,
                 vat_amount=vat_amount,
                 total=total,
                 is_vat_applied=apply_vat,
+                is_official=apply_vat,
+                vendor_national_id=vendor_national_id or None,
+                vendor_economic_code=vendor_economic_code or None,
+                description=description
+            )
+            session.add(purchase)
+            session.flush()
+
+            for item in items:
+                session.add(PurchaseItem(
+                    purchase_invoice_id=purchase.id,
+                    description=item['description'],
+                    quantity=item['quantity'],
+                    unit=item.get('unit', 'عدد'),
+                    unit_price=item['unit_price'],
+                    total=item['total']
+                ))
+
+            session.commit()
+
+            return {
+                "success": True,
+                "invoice_id": purchase.id,
+                "invoice_number": purchase.invoice_number,
+                "subtotal": subtotal,
+                "vat_amount": vat_amount,
+                "total": total,
+                "message": f"✅ فاکتور خرید شماره {purchase.invoice_number} با موفقیت ثبت شد."
+            }
+        except Exception as e:
+            session.rollback()
+            return {"success": False, "message": f"❌ خطا: {str(e)}"}
+        finally:
+            session.close()
+
+    def get_purchase_invoice(self, invoice_id: int, user_id: Optional[int] = None) -> Optional[Dict]:
+        session = self.Session()
+        try:
+            query = session.query(PurchaseInvoice).filter(PurchaseInvoice.id == invoice_id)
+            if user_id is not None:
+                query = query.filter(PurchaseInvoice.user_id == user_id)
+            purchase = query.first()
+            if not purchase:
+                return None
+            items = session.query(PurchaseItem).filter(PurchaseItem.purchase_invoice_id == purchase.id).all()
+            vendor = session.query(Vendor).filter(Vendor.id == purchase.vendor_id).first()
+            return {"invoice": purchase, "items": items, "customer": vendor}
+        finally:
+            session.close()
+
+    def set_purchase_pdf_path(self, invoice_id: int, pdf_path: str) -> None:
+        session = self.Session()
+        try:
+            purchase = session.query(PurchaseInvoice).filter(PurchaseInvoice.id == invoice_id).first()
+            if purchase:
+                purchase.pdf_path = pdf_path
+                session.commit()
+        finally:
+            session.close()
+
+    def create_invoice(
+        self,
+        customer_id: int,
+        items: List[Dict],
+        description: str = "",
+        vat_rate: float = 0.0,
+        apply_vat: bool = False,
+        user_id: Optional[int] = None,
+        document_type: str = "sale",
+        buyer_national_id: str = "",
+        buyer_economic_code: str = "",
+    ) -> Dict:
+        session = self.Session()
+        try:
+            subtotal = 0
+            for item in items:
+                item_total = item['quantity'] * item['unit_price']
+                item['total'] = item_total
+                subtotal += item_total
+
+            vat_amount = 0
+            if apply_vat and vat_rate > 0:
+                vat_amount = subtotal * (vat_rate / 100)
+
+            total = subtotal + vat_amount
+
+            invoice = ProformaInvoice(
+                invoice_number=self.get_next_invoice_number(user_id),
+                date=datetime.now(),
+                customer_id=customer_id,
+                user_id=user_id,
+                subtotal=subtotal,
+                vat_rate=vat_rate if apply_vat else 0,
+                vat_amount=vat_amount,
+                total=total,
+                is_vat_applied=apply_vat,
+                is_official=apply_vat,
+                buyer_national_id=buyer_national_id or None,
+                buyer_economic_code=buyer_economic_code or None,
                 description=description
             )
             session.add(invoice)
             session.flush()
-            
+
             for item in items:
                 invoice_item = InvoiceItem(
                     invoice_id=invoice.id,
@@ -85,44 +231,79 @@ class InvoiceGenerator:
                     total=item['total']
                 )
                 session.add(invoice_item)
-            
+
             session.commit()
-            
+
             return {
                 "success": True,
-                "invoice": invoice,
-                "message": f"✅ پیش‌فاکتور شماره {invoice.invoice_number} با موفقیت ایجاد شد."
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "subtotal": subtotal,
+                "vat_amount": vat_amount,
+                "total": total,
+                "message": f"✅ {'فاکتور' if document_type == 'purchase' else 'پیش‌فاکتور'} شماره {invoice.invoice_number} با موفقیت ایجاد شد."
             }
-            
+
         except Exception as e:
             session.rollback()
             return {"success": False, "message": f"❌ خطا: {str(e)}"}
         finally:
             session.close()
-    
-    def get_invoice(self, invoice_id: int) -> Optional[Dict]:
+
+    def set_pdf_path(self, invoice_id: int, pdf_path: str) -> None:
         session = self.Session()
         try:
-            invoice = session.query(ProformaInvoice).filter(
-                ProformaInvoice.id == invoice_id
-            ).first()
-            
+            invoice = session.query(ProformaInvoice).filter(ProformaInvoice.id == invoice_id).first()
+            if invoice:
+                invoice.pdf_path = pdf_path
+                session.commit()
+        finally:
+            session.close()
+
+    def list_invoices(self, user_id: int, limit: int = 30) -> List[Dict]:
+        session = self.Session()
+        try:
+            invoices = session.query(ProformaInvoice).filter(
+                ProformaInvoice.user_id == user_id
+            ).order_by(ProformaInvoice.id.desc()).limit(limit).all()
+            result = []
+            for inv in invoices:
+                customer = session.query(Customer).filter(Customer.id == inv.customer_id).first()
+                result.append({
+                    "id": inv.id,
+                    "invoice_number": inv.invoice_number,
+                    "date": inv.date.strftime("%Y-%m-%d"),
+                    "customer_name": customer.name if customer else "-",
+                    "total": inv.total,
+                    "is_official": inv.is_official,
+                    "has_pdf": bool(inv.pdf_path),
+                })
+            return result
+        finally:
+            session.close()
+
+    def get_invoice(self, invoice_id: int, user_id: Optional[int] = None) -> Optional[Dict]:
+        session = self.Session()
+        try:
+            query = session.query(ProformaInvoice).filter(ProformaInvoice.id == invoice_id)
+            if user_id is not None:
+                query = query.filter(ProformaInvoice.user_id == user_id)
+            invoice = query.first()
+
             if not invoice:
                 return None
-            
+
             items = session.query(InvoiceItem).filter(
                 InvoiceItem.invoice_id == invoice.id
             ).all()
-            
-            seller = self.seller_manager.get_profile()
+
             customer = session.query(Customer).filter(
                 Customer.id == invoice.customer_id
             ).first()
-            
+
             return {
                 "invoice": invoice,
                 "items": items,
-                "seller": seller,
                 "customer": customer
             }
         finally:
@@ -312,13 +493,12 @@ class InvoiceGenerator:
             
             print(f"\n{result['message']}")
             if result['success']:
-                inv = result['invoice']
                 print(f"\n📊 خلاصه فاکتور:")
-                print(f"  شماره: {inv.invoice_number}")
-                print(f"  جمع کل: {inv.subtotal:,.0f} تومان")
+                print(f"  شماره: {result['invoice_number']}")
+                print(f"  جمع کل: {result['subtotal']:,.0f} تومان")
                 if apply_vat:
-                    print(f"  مالیات ({inv.vat_rate:.0f}%): {inv.vat_amount:,.0f} تومان")
-                print(f"  مبلغ نهایی: {inv.total:,.0f} تومان")
+                    print(f"  مالیات ({vat_rate:.0f}%): {result['vat_amount']:,.0f} تومان")
+                print(f"  مبلغ نهایی: {result['total']:,.0f} تومان")
             
         except Exception as e:
             print(f"❌ خطا: {str(e)}")

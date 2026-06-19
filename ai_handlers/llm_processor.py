@@ -85,6 +85,55 @@ LLM_SYSTEM_PROMPT = """تو نارین هستی، حسابدار هوشمند و
 
 اگر سلام و احوالپرسی معمولی بود، یه جواب دوستانه و کوتاه بده."""
 
+BUSINESS_TYPE_PROMPT = """تو دستیار طبقه‌بندی کسب‌وکار برای یک نرم‌افزار حسابداری ایرانی هستی.
+کاربر کسب‌وکار خودش را با متن آزاد توصیف می‌کند. باید دقیقاً یکی از این دسته‌ها را به‌عنوان مناسب‌ترین گزینه انتخاب کنی:
+- بازرگانی: خرید و فروش کالا بدون تغییر در آن (فروشگاه، عمده‌فروشی، واردات/صادرات، نمایندگی فروش)
+- تولیدی: تولید/ساخت محصول از مواد اولیه (کارگاه، کارخانه، تولید مواد غذایی/پوشاک/مبلمان/...)
+- خدماتی: ارائه خدمات بدون فروش کالای فیزیکی (مشاوره، آموزش، تعمیرات، رستوران/کافه، آرایشگاه، حمل‌ونقل)
+- پیمانکاری: اجرای پروژه‌های ساختمانی/عمرانی/تأسیساتی برای کارفرما
+- سایر: اگر هیچ‌کدام به‌وضوح مناسب نبود
+
+همیشه خروجی را فقط به این فرمت JSON بده، بدون هیچ توضیح اضافه:
+{
+  "business_type": "یکی از: بازرگانی/تولیدی/خدماتی/پیمانکاری/سایر",
+  "confidence": "high/medium/low",
+  "reasoning": "یک جمله کوتاه فارسی که توضیح می‌دهد چرا این گزینه را پیشنهاد دادی"
+}"""
+
+VALID_BUSINESS_TYPES = {"بازرگانی", "تولیدی", "خدماتی", "پیمانکاری", "سایر"}
+
+INVOICE_EXTRACT_PROMPT = """تو دستیار ثبت فاکتور برای یک نرم‌افزار حسابداری ایرانی هستی.
+از روی متن یا گفتار آزاد کاربر (فارسی)، اطلاعات یک فاکتور فروش یا خرید را استخراج کن.
+
+موارد قابل تشخیص:
+- document_type: "sale" (فروش/پیش‌فاکتور فروش) یا "purchase" (خرید) — اگر نامشخص بود "sale" در نظر بگیر
+- party_name: نام مشتری (برای فروش) یا نام فروشنده/تامین‌کننده (برای خرید). اگر گفته نشده بود رشته خالی بگذار
+- party_mobile: شماره موبایل طرف حساب اگر گفته شده بود (۱۱ رقمی، با 09 شروع)، وگرنه رشته خالی
+- is_official: true اگر کاربر گفت "رسمی"، "فاکتور رسمی" یا "با مالیات"؛ در غیر این صورت false
+- vat_rate: اگر کاربر درصد مالیات را گفت همان عدد (مثلاً 9 یا 10)، وگرنه null
+- items: آرایه‌ای از اقلام؛ هر کدام شامل description (شرح کالا/خدمت)، quantity (عدد، پیش‌فرض 1)، unit (واحد، پیش‌فرض "عدد")، unit_price (قیمت واحد به تومان؛ اگر نگفته بود 0)
+- description: توضیح کلی اختیاری، رشته خالی اگر نبود
+- missing_info: آرایه‌ای از جمله‌های کوتاه فارسی برای هر موردی که نامعلوم/مبهم است (مثلاً قیمت یا تعداد کالایی گفته نشده). اگر چیزی مبهم نبود آرایه خالی بگذار
+- message: یک جمله فارسی خلاصه آنچه فهمیدی، برای نشان دادن به کاربر جهت تایید قبل از ثبت
+
+همیشه فقط و فقط JSON با این ساختار برگردان (بدون توضیح اضافه):
+{
+  "success": true,
+  "document_type": "sale",
+  "party_name": "",
+  "party_mobile": "",
+  "is_official": false,
+  "vat_rate": null,
+  "items": [{"description": "", "quantity": 1, "unit": "عدد", "unit_price": 0}],
+  "description": "",
+  "missing_info": [],
+  "message": ""
+}
+
+اگر متن کاربر اصلاً درباره فاکتور/خرید/فروش نبود:
+{"success": false, "message": "این متن مربوط به ثبت فاکتور نیست."}
+"""
+
 OLLAMA_BASE_URL = "http://localhost:11434"
 
 
@@ -111,7 +160,65 @@ class LLMProcessor:
             return self._call_openai(text)
         return {"success": False, "error": "no_api_key"}
 
-    def _call_openai(self, text: str) -> dict:
+    def classify_business_type(self, description: str) -> dict:
+        """تشخیص نوع کسب‌وکار از روی توضیح آزاد کاربر با استفاده از LLM."""
+        if self.use_ollama:
+            result = self._call_ollama(description, system_prompt=BUSINESS_TYPE_PROMPT)
+        elif self.api_key:
+            result = self._call_openai(description, system_prompt=BUSINESS_TYPE_PROMPT)
+        else:
+            return {"success": False, "message": "سرویس هوش مصنوعی در دسترس نیست. لطفاً نوع کسب‌وکار را خودتان انتخاب کنید."}
+
+        business_type = result.get("business_type")
+        if business_type not in VALID_BUSINESS_TYPES:
+            return {"success": False, "message": result.get("message", "تشخیص نوع کسب‌وکار ممکن نشد. لطفاً خودتان انتخاب کنید.")}
+
+        return {
+            "success": True,
+            "business_type": business_type,
+            "confidence": result.get("confidence", "medium"),
+            "reasoning": result.get("reasoning", ""),
+        }
+
+    def extract_invoice(self, text: str) -> dict:
+        """استخراج اطلاعات فاکتور (فروش/خرید) از متن یا رونویسی صدای کاربر."""
+        if self.use_ollama:
+            result = self._call_ollama(text, system_prompt=INVOICE_EXTRACT_PROMPT)
+        elif self.api_key:
+            result = self._call_openai(text, system_prompt=INVOICE_EXTRACT_PROMPT)
+        else:
+            return {"success": False, "message": "سرویس هوش مصنوعی در دسترس نیست."}
+
+        if not result.get("success"):
+            return {"success": False, "message": result.get("message", "اطلاعات فاکتور قابل تشخیص نبود.")}
+
+        items = result.get("items") or []
+        cleaned_items = []
+        for item in items:
+            try:
+                cleaned_items.append({
+                    "description": str(item.get("description", "")).strip(),
+                    "quantity": float(item.get("quantity") or 1),
+                    "unit": str(item.get("unit") or "عدد").strip(),
+                    "unit_price": float(item.get("unit_price") or 0),
+                })
+            except (TypeError, ValueError):
+                continue
+
+        return {
+            "success": True,
+            "document_type": result.get("document_type") if result.get("document_type") in ("sale", "purchase") else "sale",
+            "party_name": str(result.get("party_name", "")).strip(),
+            "party_mobile": str(result.get("party_mobile", "")).strip(),
+            "is_official": bool(result.get("is_official", False)),
+            "vat_rate": result.get("vat_rate"),
+            "items": cleaned_items,
+            "description": str(result.get("description", "")).strip(),
+            "missing_info": result.get("missing_info") or [],
+            "message": result.get("message", ""),
+        }
+
+    def _call_openai(self, text: str, system_prompt: str = LLM_SYSTEM_PROMPT) -> dict:
         import requests
         try:
             resp = requests.post(
@@ -123,7 +230,7 @@ class LLMProcessor:
                 json={
                     "model": self.model,
                     "messages": [
-                        {"role": "system", "content": LLM_SYSTEM_PROMPT},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": text}
                     ],
                     "temperature": 0.1,
@@ -139,7 +246,7 @@ class LLMProcessor:
         except Exception as e:
             return {"success": False, "error": "exception", "message": f"خطا: {str(e)}"}
 
-    def _call_ollama(self, text: str) -> dict:
+    def _call_ollama(self, text: str, system_prompt: str = LLM_SYSTEM_PROMPT) -> dict:
         import requests
         try:
             resp = requests.post(
@@ -147,7 +254,7 @@ class LLMProcessor:
                 json={
                     "model": "qwen2.5:3b",
                     "messages": [
-                        {"role": "system", "content": LLM_SYSTEM_PROMPT},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": text}
                     ],
                     "options": {"temperature": 0.1},

@@ -47,6 +47,36 @@ class Vendor(Base):
     economic_code = Column(String(20))
     created_at = Column(DateTime, default=datetime.now)
 
+class PurchaseInvoice(Base):
+    __tablename__ = 'purchase_invoices'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=True)
+    # عمداً unique=True ندارد، دلیل مشابه ProformaInvoice.invoice_number
+    invoice_number = Column(String(50), nullable=False)
+    date = Column(DateTime, default=datetime.now)
+    vendor_id = Column(Integer, ForeignKey('vendors.id'))
+    subtotal = Column(Float, default=0)
+    vat_rate = Column(Float, default=0)
+    vat_amount = Column(Float, default=0)
+    total = Column(Float, default=0)
+    is_vat_applied = Column(Boolean, default=False)
+    is_official = Column(Boolean, default=False)
+    vendor_national_id = Column(String(30), nullable=True)
+    vendor_economic_code = Column(String(30), nullable=True)
+    description = Column(String(200))
+    pdf_path = Column(String(200))
+    created_at = Column(DateTime, default=datetime.now)
+
+class PurchaseItem(Base):
+    __tablename__ = 'purchase_items'
+    id = Column(Integer, primary_key=True)
+    purchase_invoice_id = Column(Integer, ForeignKey('purchase_invoices.id'))
+    description = Column(String(200), nullable=False)
+    quantity = Column(Float, default=1)
+    unit = Column(String(20), default="عدد")
+    unit_price = Column(Float, default=0)
+    total = Column(Float, default=0)
+
 class JournalEntry(Base):
     __tablename__ = 'journal_entries'
     id = Column(Integer, primary_key=True)
@@ -68,18 +98,25 @@ class JournalLine(Base):
 class SellerProfile(Base):
     __tablename__ = 'seller_profiles'
     id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=True)
     company_name = Column(String(100), nullable=False)
     address = Column(String(300))
     phone = Column(String(20))
     mobile = Column(String(20))
     logo_path = Column(String(200))
     tax_id = Column(String(50))
+    economic_code = Column(String(30), nullable=True)
+    national_id = Column(String(30), nullable=True)
+    company_registration_number = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class ProformaInvoice(Base):
     __tablename__ = 'proforma_invoices'
     id = Column(Integer, primary_key=True)
-    invoice_number = Column(String(50), unique=True, nullable=False)
+    user_id = Column(Integer, nullable=True)
+    # توجه: invoice_number عمداً unique=True ندارد چون شماره‌گذاری به‌ازای هر کاربر/کسب‌وکار جداگانه است
+    # (مثلاً دو کاربر مختلف می‌توانند هرکدام شماره INV-202406-0001 داشته باشند).
+    invoice_number = Column(String(50), nullable=False)
     date = Column(DateTime, default=datetime.now)
     customer_id = Column(Integer, ForeignKey('customers.id'))
     seller_id = Column(Integer, ForeignKey('seller_profiles.id'))
@@ -88,6 +125,9 @@ class ProformaInvoice(Base):
     vat_amount = Column(Float, default=0)
     total = Column(Float, default=0)
     is_vat_applied = Column(Boolean, default=True)
+    is_official = Column(Boolean, default=False)
+    buyer_national_id = Column(String(30), nullable=True)
+    buyer_economic_code = Column(String(30), nullable=True)
     description = Column(String(200))
     pdf_path = Column(String(200))
     created_at = Column(DateTime, default=datetime.now)
@@ -157,10 +197,36 @@ def _ensure_columns(engine, table_name, column_defs):
                 conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_ddl}"))
 
 
+def _drop_unique_constraint_on_invoice_number(engine, table_name):
+    """جدول‌های قدیمی (نسخه تک‌کاربره) محدودیت UNIQUE سراسری روی invoice_number داشتند که با
+    شماره‌گذاری مستقل به‌ازای هر کاربر ناسازگار است. این تابع جدول را بدون آن محدودیت بازسازی می‌کند،
+    با حفظ کامل داده‌های موجود."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine)
+    if table_name not in inspector.get_table_names():
+        return
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name=:t"), {"t": table_name}).fetchone()
+    if not row or not row[0] or "UNIQUE" not in row[0].upper():
+        return
+
+    columns = inspector.get_columns(table_name)
+    col_names = [c["name"] for c in columns]
+    with engine.begin() as conn:
+        conn.execute(text(f"ALTER TABLE {table_name} RENAME TO {table_name}_old"))
+        Base.metadata.tables[table_name].create(conn)
+        cols_csv = ", ".join(col_names)
+        conn.execute(text(f"INSERT INTO {table_name} ({cols_csv}) SELECT {cols_csv} FROM {table_name}_old"))
+        conn.execute(text(f"DROP TABLE {table_name}_old"))
+    logger.info("محدودیت UNIQUE سراسری از ستون invoice_number جدول %s حذف شد.", table_name)
+
+
 def init_db(db_path="accounting.db"):
     """ایجاد دیتابیس و جداول"""
     engine = create_engine(f'sqlite:///{db_path}', echo=False)
     Base.metadata.create_all(engine)
+    _drop_unique_constraint_on_invoice_number(engine, "proforma_invoices")
+    _drop_unique_constraint_on_invoice_number(engine, "purchase_invoices")
     # ایجاد جداول لایسنس و کاربران
     from database.license_models import Base as LicenseBase
     LicenseBase.metadata.create_all(engine)
@@ -171,11 +237,44 @@ def init_db(db_path="accounting.db"):
         ("otp_expires_at", "DATETIME"),
         ("otp_attempts", "INTEGER DEFAULT 0"),
         ("otp_requested_at", "DATETIME"),
+        ("company_registration_number", "VARCHAR(50)"),
+    ])
+    _ensure_columns(engine, "seller_profiles", [
+        ("user_id", "INTEGER"),
+        ("economic_code", "VARCHAR(30)"),
+        ("national_id", "VARCHAR(30)"),
+        ("company_registration_number", "VARCHAR(50)"),
+    ])
+    _ensure_columns(engine, "proforma_invoices", [
+        ("user_id", "INTEGER"),
+        ("is_official", "BOOLEAN DEFAULT 0"),
+        ("buyer_national_id", "VARCHAR(30)"),
+        ("buyer_economic_code", "VARCHAR(30)"),
+    ])
+    _ensure_columns(engine, "transactions", [
+        ("discount_code", "VARCHAR(30)"),
     ])
 
     Session = sessionmaker(bind=engine)
     session = Session()
-    
+
+    # اضافه کردن پلن‌های پیش‌فرض قیمت‌گذاری (فقط اگر قبلاً ایجاد نشده باشند)
+    from database.license_models import PricingPlan
+    default_plans = [
+        ("free_trial", "آزمایشی", 0, 1, 50, "۵۰ سند اول رایگان"),
+        ("monthly", "ماهانه", 5000000, 1, 0, "نامحدود - ماهانه"),
+        ("quarterly", "سه ماهه", 13500000, 3, 0, "نامحدود - سه ماهه (۱۰٪ تخفیف)"),
+        ("semi_annual", "شش ماهه", 24000000, 6, 0, "نامحدود - شش ماهه (۲۰٪ تخفیف)"),
+        ("annual", "سالانه", 42000000, 12, 0, "نامحدود - سالانه (۳۰٪ تخفیف)"),
+    ]
+    for plan_key, name, price, months, max_vouchers, description in default_plans:
+        if not session.query(PricingPlan).filter_by(plan_key=plan_key).first():
+            session.add(PricingPlan(
+                plan_key=plan_key, name=name, price=price, months=months,
+                max_vouchers=max_vouchers, description=description
+            ))
+    session.commit()
+
     # اضافه کردن نوع‌های کسب‌وکار
     business_types = [
         ('بازرگانی', 'خرید و فروش کالا'),
