@@ -1,0 +1,34 @@
+# Environment
+.env
+
+# Database
+*.db
+
+# Python
+__pycache__/
+*.pyc
+venv/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+
+# Uploads
+voice_temp/
+voice_files/
+
+# Logs
+logs/
+*.log
+
+# Claude Code internal state
+.claude/
+
+# Reports
+*.pdf
+*.png
+
+# OS
+Thumbs.db
+.DS_Store

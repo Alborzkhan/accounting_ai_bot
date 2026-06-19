@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
+    <meta name="theme-color" content="#11213a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>نارین | حسابدار هوشمند</title>
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --glass-bg: rgba(255, 255, 255, 0.46);
+            --glass-bg-strong: rgba(255, 255, 255, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.55);
+            --ink: #14213a;
+            --ink-soft: #4a5b78;
+            --income: #1f9d6e;
+            --expense: #d24545;
+            --radius-lg: 28px;
+            --radius-md: 20px;
+            --radius-sm: 14px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        html, body { min-height: 100%; }
+
+        body {
+            font-family: 'Vazirmatn', 'IranYekan', Tahoma, sans-serif;
+            color: var(--ink);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* پس‌زمینه موشی رنگی الهام‌گرفته از والپیپر اپل، بدون نیاز به فایل تصویر */
+        .bg-mesh {
+            position: fixed;
+            inset: -10%;
+            z-index: -2;
+            background:
+                radial-gradient(circle at 18% 22%, #ff9a8b 0%, transparent 42%),
+                radial-gradient(circle at 82% 12%, #a18cd1 0%, transparent 45%),
+                radial-gradient(circle at 22% 82%, #5ee7df 0%, transparent 45%),
+                radial-gradient(circle at 85% 78%, #4facfe 0%, transparent 48%),
+                linear-gradient(160deg, #0f2b3d, #1a1a40);
+            filter: blur(60px) saturate(150%);
+            animation: meshMove 22s ease-in-out infinite alternate;
+        }
+
+        @keyframes meshMove {
+            0%   { transform: translate(0, 0) scale(1.05); }
+            100% { transform: translate(-3%, 3%) scale(1.15); }
+        }
+
+        .bg-veil {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(22px) saturate(160%);
+            -webkit-backdrop-filter: blur(22px) saturate(160%);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 8px 32px rgba(15, 30, 60, 0.18);
+        }
+
+        .screen { min-height: 100vh; position: relative; z-index: 2; }
+
+        /* ===== صفحه ورود ===== */
+        .login-screen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 380px;
+            border-radius: var(--radius-lg);
+            padding: 32px 24px;
+            text-align: center;
+        }
+
+        .brand-icon {
+            width: 72px;
+            height: 72px;
+            margin: 0 auto 14px;
+            border-radius: 26%;
+            background: linear-gradient(135deg, #4facfe, #00c2b8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            box-shadow: 0 10px 24px rgba(0, 120, 140, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.5);
+        }
+
+        .login-card h1 { font-size: 24px; font-weight: 800; margin-bottom: 2px; }
+        .login-card .sub { font-size: 13px; color: var(--ink-soft); margin-bottom: 24px; }
+
+        .auth-step { text-align: right; }
+
+        .field-label { display: block; font-size: 12px; font-weight: 600; color: var(--ink-soft); margin: 14px 0 6px; }
+
+        .glass-input {
+            width: 100%;
+            padding: 13px 16px;
+            border-radius: var(--radius-sm);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            background: rgba(255, 255, 255, 0.75);
+            font-family: inherit;
+            font-size: 15px;
+            color: var(--ink);
+            outline: none;
+            transition: 0.15s;
+        }
+
+        .glass-input:focus { border-color: #4facfe; box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.18); }
+
+        .primary-btn {
+            width: 100%;
+            margin-top: 18px;
+            padding: 13px;
+            border: none;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 15px;
+            color: white;
+            background: linear-gradient(135deg, #1a4a6f, #0f2b3d);
+            cursor: pointer;
+            transition: 0.15s;
+            font-family: inherit;
+        }
+
+        .primary-btn:active { transform: scale(0.97); }
+        .primary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+        .text-btn {
+            display: block;
+            margin: 14px auto 0;
+            background: none;
+            border: none;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            color: #1a4a6f;
+            cursor: pointer;
+        }
+
+        .text-btn:disabled { color: var(--ink-soft); cursor: default; }
+
+        .field-error { min-height: 18px; font-size: 12px; color: var(--expense); margin-top: 10px; font-weight: 600; }
+
+        .otp-boxes { display: flex; gap: 8px; justify-content: center; margin-top: 4px; }
+
+        .otp-box {
+            width: 42px;
+            height: 52px;
+            text-align: center;
+            font-size: 22px;
+            font-weight: 700;
+            border-radius: var(--radius-sm);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            background: rgba(255, 255, 255, 0.75);
+            outline: none;
+            color: var(--ink);
+        }
+
+        .otp-box:focus { border-color: #4facfe; box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.18); }
+
+        /* ===== صفحه اصلی ===== */
+        .home-screen { padding: 24px 16px 110px; }
+
+        .container { max-width: 480px; margin: 0 auto; }
+
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+
+        .top-bar h1 { font-size: 25px; font-weight: 800; }
+        .top-bar p { font-size: 12px; color: var(--ink-soft); }
+
+        .badge {
+            padding: 7px 16px;
+            border-radius: 40px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .widget {
+            border-radius: var(--radius-lg);
+            padding: 22px;
+            margin-bottom: 22px;
+            text-align: center;
+        }
+
+        .balance-label { font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+        .balance-amount { font-size: 34px; font-weight: 800; margin: 6px 0 14px; }
+
+        .balance-stats { display: flex; gap: 20px; border-top: 1px solid rgba(0, 0, 0, 0.06); padding-top: 14px; }
+        .stat { flex: 1; }
+        .stat-title { font-size: 12px; color: var(--ink-soft); }
+        .stat-number { font-size: 18px; font-weight: 700; margin-top: 4px; }
+        .income-color { color: var(--income); }
+        .expense-color { color: var(--expense); }
+
+        /* شبکه آیکون‌ها مثل صفحه هوم آیفون */
+        .app-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-bottom: 28px;
+        }
+
+        .app-tile {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .app-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 24%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18), inset 0 1px 1px rgba(255, 255, 255, 0.45);
+            transition: transform 0.12s;
+        }
+
+        .app-icon::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 55%);
+        }
+
+        .app-tile:active .app-icon { transform: scale(0.9); }
+
+        .app-icon.small { width: 44px; height: 44px; font-size: 19px; border-radius: 26%; }
+
+        .icon-blue   { background: linear-gradient(135deg, #4facfe, #2563eb); }
+        .icon-red    { background: linear-gradient(135deg, #ff6a6a, #c23b3b); }
+        .icon-purple { background: linear-gradient(135deg, #a18cd1, #6c5ce7); }
+        .icon-orange { background: linear-gradient(135deg, #ffb84d, #e8741f); }
+        .icon-green  { background: linear-gradient(135deg, #5ee7df, #1f9d6e); }
+        .icon-gray   { background: linear-gradient(135deg, #b8c4d6, #6b7d99); }
+
+        .app-tile span { font-size: 11.5px; font-weight: 600; color: var(--ink); text-align: center; }
+
+        .section-header { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 14px; }
+        .section-header h3 { font-size: 17px; font-weight: 700; }
+
+        .categories-list { display: flex; flex-direction: column; gap: 10px; }
+
+        .cat-item { border-radius: var(--radius-md); overflow: hidden; }
+        .cat-item, .detail-card, .voucher-modal, .voice-modal, .sheet, .chart-container, .toast-message {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px) saturate(160%);
+            -webkit-backdrop-filter: blur(20px) saturate(160%);
+            border: 1px solid var(--glass-border);
+        }
+
+        .cat-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; cursor: pointer; }
+        .cat-title { font-weight: 600; font-size: 15px; }
+        .cat-chevron { font-size: 16px; font-weight: 700; color: var(--ink-soft); transition: 0.2s; width: 28px; text-align: center; }
+
+        .sub-accounts { max-height: 0; overflow: hidden; transition: 0.25s ease; background: rgba(255, 255, 255, 0.25); padding: 0 18px; }
+        .sub-accounts.open { max-height: 320px; padding: 8px 18px 12px; border-top: 1px solid rgba(0, 0, 0, 0.05); }
+        .sub-account { padding: 10px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.05); font-size: 13px; font-weight: 500; display: flex; justify-content: space-between; cursor: pointer; }
+        .empty-sub { padding: 10px 0; font-size: 12px; color: var(--ink-soft); font-style: italic; }
+
+        /* داک پایین مثل آیفون */
+        .dock {
+            position: fixed;
+            bottom: 18px;
+            left: 16px;
+            right: 16px;
+            max-width: 420px;
+            margin: 0 auto;
+            border-radius: 32px;
+            padding: 12px 22px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            z-index: 50;
+        }
+
+        .dock-item { cursor: pointer; }
+        .dock-item:active .app-icon { transform: scale(0.88); }
+
+        /* صفحه جزئیات */
+        .detail-page {
+            position: fixed; inset: 0; z-index: 1200;
+            background: rgba(10, 20, 40, 0.25);
+            backdrop-filter: blur(10px);
+            display: none; flex-direction: column; overflow-y: auto; padding: 20px 16px;
+        }
+        .detail-page.active { display: flex; }
+        .detail-card { border-radius: var(--radius-lg); padding: 20px; margin: 0 auto; max-width: 480px; width: 100%; }
+        .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .back-btn { background: rgba(255, 255, 255, 0.65); padding: 8px 20px; border-radius: 40px; font-weight: 500; cursor: pointer; font-family: inherit; border: none; }
+
+        .chart-container { height: 250px; margin: 16px 0; border-radius: var(--radius-md); padding: 12px; }
+        canvas { max-height: 210px; width: 100%; }
+
+        .chart-type-row { display: flex; gap: 12px; margin: 16px 0; }
+        .chart-type {
+            background: rgba(255, 255, 255, 0.6); border: 1px solid rgba(255, 255, 255, 0.5);
+            padding: 8px 20px; border-radius: 40px; font-size: 13px; font-weight: 500;
+            cursor: pointer; transition: all 0.2s; font-family: inherit; color: var(--ink);
+        }
+        .chart-type.active { background: #1a4a6f; color: white; border-color: #1a4a6f; box-shadow: 0 2px 8px rgba(26, 74, 111, 0.35); }
+
+        .sub-detail-list { margin-top: 16px; border-top: 1px solid rgba(0, 0, 0, 0.06); padding-top: 12px; }
+        .sub-detail-item { padding: 10px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.05); font-size: 13px; display: flex; justify-content: space-between; }
+
+        .ask-narin-btn {
+            background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.6);
+            border-radius: 60px; padding: 12px 24px; font-weight: 600; font-size: 14px; color: var(--ink);
+            display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+            margin: 20px auto 0; cursor: pointer; transition: 0.2s; font-family: inherit; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .ask-narin-btn:active { transform: scale(0.97); }
+
+        .mic-icon-new {
+            display: inline-block; width: 18px; height: 18px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23fff'%3E%3Cpath d='M12 16c-2.21 0-4-1.79-4-4V6c0-2.21 1.79-4 4-4s4 1.79 4 4v6c0 2.21-1.79 4-4 4zm-6-4c0 .53.09 1.04.26 1.52C6.77 15.75 8.65 17.5 12 18.5c3.35 1 5.23-.75 6.74-2.98.17-.48.26-.99.26-1.52h-2c0 1.11-.89 2-2 2s-2-.89-2-2h-2c0 1.11-.89 2-2 2s-2-.89-2-2H6z'/%3E%3C/svg%3E");
+            background-size: contain; background-repeat: no-repeat;
+        }
+        .ask-narin-btn .mic-icon-new { filter: invert(0.6); }
+
+        .voice-small-btn {
+            background: rgba(255, 255, 255, 0.6); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50px; padding: 10px 20px; display: inline-flex; align-items: center; gap: 8px;
+            font-size: 13px; font-weight: 500; color: var(--ink); cursor: pointer; transition: 0.15s; font-family: inherit;
+        }
+        .voice-small-btn .mic-icon-new { filter: invert(0.6); }
+        .voice-small-btn.recording { background: var(--expense); color: white; animation: pulse 1s infinite; }
+        .voice-small-btn.recording .mic-icon-new { filter: invert(1); }
+        .voice-control { text-align: center; margin: 15px 0; }
+
+        .toast-message {
+            position: fixed; bottom: 110px; left: 20px; right: 20px;
+            padding: 13px 20px; border-radius: 50px; text-align: center; font-size: 13px; font-weight: 600;
+            z-index: 1500; opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+        }
+        .toast-message.show { opacity: 1; animation: fadeOut 2.6s forwards; }
+        @keyframes fadeOut { 0% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
+
+        .modal-overlay { position: fixed; inset: 0; background: rgba(10, 20, 40, 0.35); backdrop-filter: blur(4px); z-index: 1000; display: none; }
+        .modal-overlay.active { display: block; }
+
+        .voucher-modal, .voice-modal, .sheet {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: rgba(255, 255, 255, 0.92) !important;
+            border-radius: 28px 28px 0 0; padding: 24px 20px 32px; z-index: 1100;
+            display: none; animation: slideUp 0.25s ease;
+        }
+        .voucher-modal.active, .voice-modal.active, .sheet.active { display: block; }
+
+        .modal-title { font-size: 19px; font-weight: 700; margin-bottom: 16px; }
+
+        textarea {
+            width: 100%; padding: 12px; border-radius: var(--radius-md); border: 1px solid rgba(0, 0, 0, 0.1);
+            background: rgba(255, 255, 255, 0.85); font-family: inherit; font-size: 14px; margin: 12px 0; resize: vertical;
+        }
+
+        .modal-buttons { display: flex; gap: 12px; margin-top: 8px; }
+        .modal-btn { flex: 1; padding: 12px; border-radius: 40px; font-weight: 600; border: none; cursor: pointer; background: #e8eef2; color: var(--ink); font-family: inherit; }
+        .modal-btn-primary { background: #1a4a6f; color: white; }
+
+        .profile-info { background: rgba(255, 255, 255, 0.6); border-radius: var(--radius-md); padding: 14px; font-size: 13px; line-height: 1.9; margin-bottom: 14px; }
+
+        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+
+<div class="bg-mesh"></div>
+<div class="bg-veil"></div>
+
+<!-- ===== صفحه ورود ===== -->
+<div id="loginScreen" class="screen login-screen">
+    <div class="login-card glass">
+        <div class="brand-icon">🧾</div>
+        <h1>نارین</h1>
+        <p class="sub">حسابدار هوشمند شما</p>
+
+        <div id="phoneStep" class="auth-step">
+            <label class="field-label">شماره موبایل</label>
+            <input id="mobileInput" class="glass-input" type="tel" inputmode="numeric" maxlength="11" placeholder="09xxxxxxxxx" dir="ltr">
+            <label class="field-label">نام (اختیاری)</label>
+            <input id="nameInput" class="glass-input" type="text" placeholder="نام شما">
+            <button id="sendOtpBtn" class="primary-btn">ارسال کد تایید</button>
+            <p id="phoneError" class="field-error"></p>
+        </div>
+
+        <div id="otpStep" class="auth-step" style="display:none;">
+            <label class="field-label">کد تایید ارسال‌شده به <span id="otpMobileLabel" dir="ltr"></span></label>
+            <div class="otp-boxes" dir="ltr">
+                <input class="otp-box" maxlength="1" inputmode="numeric">
+                <input class="otp-box" maxlength="1" inputmode="numeric">
+                <input class="otp-box" maxlength="1" inputmode="numeric">
+                <input class="otp-box" maxlength="1" inputmode="numeric">
+                <input class="otp-box" maxlength="1" inputmode="numeric">
+                <input class="otp-box" maxlength="1" inputmode="numeric">
+            </div>
+            <button id="verifyOtpBtn" class="primary-btn">تایید و ورود</button>
+            <button id="resendOtpBtn" class="text-btn" disabled>ارسال مجدد (60)</button>
+            <p id="otpError" class="field-error"></p>
+        </div>
+    </div>
+</div>
+
+<!-- ===== صفحه اصلی ===== -->
+<div id="homeScreen" class="screen home-screen" style="display:none;">
+    <div class="container">
+        <div class="top-bar">
+            <div>
+                <h1>نارین</h1>
+                <p>حسابدار هوشمند</p>
+            </div>
+            <div class="badge glass" id="businessBadge">بارگیری...</div>
+        </div>
+
+        <div class="widget glass">
+            <div class="balance-label">سود ناخالص</div>
+            <div class="balance-amount" id="grossProfit">0 تومان</div>
+            <div class="balance-stats">
+                <div class="stat"><div class="stat-title">درآمد کل</div><div class="stat-number income-color" id="totalIncome">0</div></div>
+                <div class="stat"><div class="stat-title">هزینه کل</div><div class="stat-number expense-color" id="totalExpense">0</div></div>
+            </div>
+        </div>
+
+        <div class="app-grid">
+            <div class="app-tile" id="openVoucherBtn">
+                <div class="app-icon icon-blue">📝</div>
+                <span>ثبت سند</span>
+            </div>
+            <div class="app-tile" id="voiceMainBtn">
+                <div class="app-icon icon-red"><span class="mic-icon-new"></span></div>
+                <span>فرمان صوتی</span>
+            </div>
+            <div class="app-tile" id="pricingTile">
+                <div class="app-icon icon-purple">💎</div>
+                <span>اشتراک من</span>
+            </div>
+            <div class="app-tile" id="profileTile">
+                <div class="app-icon icon-orange">👤</div>
+                <span>پروفایل</span>
+            </div>
+        </div>
+
+        <div class="section-header"><h3>دسته‌بندی حسابداری</h3></div>
+        <div id="categoriesList" class="categories-list"></div>
+    </div>
+
+    <div class="dock glass">
+        <div class="dock-item" id="dockVoucher"><div class="app-icon icon-blue small">📝</div></div>
+        <div class="dock-item" id="dockVoice"><div class="app-icon icon-red small"><span class="mic-icon-new"></span></div></div>
+        <div class="dock-item" id="dockReports"><div class="app-icon icon-green small">📊</div></div>
+        <div class="dock-item" id="dockProfile"><div class="app-icon icon-gray small">👤</div></div>
+    </div>
+</div>
+
+<!-- مدال‌ها -->
+<div id="overlay" class="modal-overlay"></div>
+
+<div id="voucherModal" class="voucher-modal">
+    <div class="modal-title">ثبت سند جدید</div>
+    <textarea id="voucherDesc" rows="3" placeholder="مثال: خرید 100 عدد خودکار 5000 تومان"></textarea>
+    <div class="modal-buttons">
+        <button class="modal-btn" id="cancelVoucherBtn">لغو</button>
+        <button class="modal-btn modal-btn-primary" id="confirmVoucherBtn">ثبت سند</button>
+    </div>
+</div>
+
+<div id="voiceModal" class="voice-modal">
+    <div class="modal-title">فرمان صوتی</div>
+    <div class="voice-control">
+        <div class="voice-small-btn" id="bigMicIcon"><span class="mic-icon-new"></span> ضبط صدا</div>
+    </div>
+    <p style="text-align:center; margin:16px 0;" id="voiceStatusText">دکمه را نگه دارید و صحبت کنید</p>
+    <button class="modal-btn" id="closeVoiceBtn">بستن</button>
+</div>
+
+<div id="profileSheet" class="sheet">
+    <div class="modal-title">حساب من</div>
+    <div id="profileLicenseInfo" class="profile-info">در حال بارگذاری...</div>
+    <div class="modal-buttons">
+        <button class="modal-btn" id="closeProfileBtn">بستن</button>
+        <button class="modal-btn modal-btn-primary" id="logoutBtn">خروج از حساب</button>
+    </div>
+</div>
+
+<!-- صفحه جزئیات -->
+<div id="detailPage" class="detail-page">
+    <div class="detail-card">
+        <div class="detail-header">
+            <h3 id="detailTitle">حساب معین</h3>
+            <button class="back-btn" id="closeDetailBtn">← بازگشت</button>
+        </div>
+        <div class="chart-type-row">
+            <button class="chart-type active" data-type="bar">میله‌ای</button>
+            <button class="chart-type" data-type="pie">دایره‌ای</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="detailChartCanvas"></canvas>
+        </div>
+        <div class="sub-detail-list">
+            <div style="font-weight:600; margin-bottom:8px;">📂 حساب‌های تفصیلی</div>
+            <div id="subDetailsList">در حال بارگذاری...</div>
+        </div>
+        <div style="display: flex; justify-content: center;">
+            <button class="ask-narin-btn" id="askAiBtn">
+                <span class="mic-icon-new"></span> پرسش از حسابدار شما نارین
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="toastMsg" class="toast-message"></div>
+
+<script>
+    function showToast(message, isError = false) {
+        const toast = document.getElementById('toastMsg');
+        toast.textContent = message;
+        toast.style.background = isError ? 'rgba(255,220,220,0.95)' : 'rgba(220,255,220,0.95)';
+        toast.style.color = isError ? '#a11' : '#2c6e2c';
+        toast.classList.remove('show');
+        setTimeout(() => toast.classList.add('show'), 10);
+        setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    function msgOf(data, fallback) {
+        return (data && (data.message || data.detail)) || fallback;
+    }
+
+    /* ===================== احراز هویت (OTP) ===================== */
+    let resendTimer = null;
+
+    function validMobile(v) { return /^09\d{9}$/.test(v); }
+
+    function startResendCountdown(seconds = 60) {
+        const btn = document.getElementById('resendOtpBtn');
+        btn.disabled = true;
+        let remaining = seconds;
+        btn.textContent = `ارسال مجدد (${remaining})`;
+        if (resendTimer) clearInterval(resendTimer);
+        resendTimer = setInterval(() => {
+            remaining -= 1;
+            if (remaining <= 0) {
+                clearInterval(resendTimer);
+                btn.disabled = false;
+                btn.textContent = 'ارسال مجدد کد';
+            } else {
+                btn.textContent = `ارسال مجدد (${remaining})`;
+            }
+        }, 1000);
+    }
+
+    async function requestOtp() {
+        const mobile = document.getElementById('mobileInput').value.trim();
+        const errEl = document.getElementById('phoneError');
+        errEl.textContent = '';
+        if (!validMobile(mobile)) { errEl.textContent = 'شماره موبایل را به‌صورت 09xxxxxxxxx وارد کنید.'; return; }
+
+        const btn = document.getElementById('sendOtpBtn');
+        btn.disabled = true;
+        try {
+            const res = await fetch('/auth/request-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'mobile=' + encodeURIComponent(mobile)
+            });
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('otpMobileLabel').textContent = mobile;
+                document.getElementById('phoneStep').style.display = 'none';
+                document.getElementById('otpStep').style.display = 'block';
+                document.querySelectorAll('.otp-box').forEach(b => b.value = '');
+                document.querySelector('.otp-box').focus();
+                startResendCountdown(60);
+            } else {
+                errEl.textContent = msgOf(data, 'خطا در ارسال کد تایید.');
+            }
+        } catch (e) {
+            errEl.textContent = 'خطا در ارتباط با سرور.';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function verifyOtp() {
+        const mobile = document.getElementById('mobileInput').value.trim();
+        const name = document.getElementById('nameInput').value.trim();
+        const code = Array.from(document.querySelectorAll('.otp-box')).map(b => b.value).join('');
+        const errEl = document.getElementById('otpError');
+        errEl.textContent = '';
+        if (code.length !== 6) { errEl.textContent = 'کد ۶ رقمی را کامل وارد کنید.'; return; }
+
+        const btn = document.getElementById('verifyOtpBtn');
+        btn.disabled = true;
+        try {
+            const res = await fetch('/auth/verify-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `mobile=${encodeURIComponent(mobile)}&code=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}`
+            });
+            const data = await res.json();
+            if (data.success) {
+                if (resendTimer) clearInterval(resendTimer);
+                enterHomeScreen();
+            } else {
+                errEl.textContent = msgOf(data, 'کد تایید نادرست است.');
+                document.querySelectorAll('.otp-box').forEach(b => b.value = '');
+                document.querySelector('.otp-box').focus();
+            }
+        } catch (e) {
+            errEl.textContent = 'خطا در ارتباط با سرور.';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function wireOtpBoxes() {
+        const boxes = Array.from(document.querySelectorAll('.otp-box'));
+        boxes.forEach((box, idx) => {
+            box.addEventListener('input', () => {
+                box.value = box.value.replace(/[^0-9]/g, '').slice(0, 1);
+                if (box.value && idx < boxes.length - 1) boxes[idx + 1].focus();
+            });
+            box.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !box.value && idx > 0) boxes[idx - 1].focus();
+            });
+            box.addEventListener('paste', (e) => {
+                e.preventDefault();
+                const text = (e.clipboardData.getData('text') || '').replace(/[^0-9]/g, '').slice(0, 6);
+                text.split('').forEach((ch, i) => { if (boxes[i]) boxes[i].value = ch; });
+                if (text.length > 0) boxes[Math.min(text.length, boxes.length) - 1].focus();
+            });
+        });
+    }
+
+    function showLoginScreen() {
+        document.getElementById('loginScreen').style.display = 'flex';
+        document.getElementById('homeScreen').style.display = 'none';
+        document.getElementById('phoneStep').style.display = 'block';
+        document.getElementById('otpStep').style.display = 'none';
+    }
+
+    function enterHomeScreen() {
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('homeScreen').style.display = 'block';
+        fetchBusiness();
+        updateGross();
+    }
+
+    async function checkAuthAndInit() {
+        try {
+            const res = await fetch('/auth/me');
+            const data = await res.json();
+            if (data.logged_in) enterHomeScreen(); else showLoginScreen();
+        } catch (e) {
+            showLoginScreen();
+        }
+    }
+
+    document.getElementById('sendOtpBtn').onclick = requestOtp;
+    document.getElementById('verifyOtpBtn').onclick = verifyOtp;
+    document.getElementById('resendOtpBtn').onclick = requestOtp;
+    wireOtpBoxes();
+
+    /* ===================== نمودار ===================== */
+    let currentChart = null;
+    let currentChartType = 'bar';
+    let currentAccountCode = null;
+
+    function renderChart(canvasId, debit, credit, type) {
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        if (currentChart) currentChart.destroy();
+        if (type === 'bar') {
+            currentChart = new Chart(ctx, {
+                type: 'bar',
+                data: { labels: ['بدهکار', 'بستانکار'], datasets: [{ label: 'مانده حساب', data: [debit, credit], backgroundColor: ['#F97316', '#3B82F6'], borderRadius: 8 }] },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'top' } } }
+            });
+        } else {
+            const total = debit + credit;
+            if (total === 0) {
+                currentChart = new Chart(ctx, { type: 'pie', data: { labels: ['بدون داده'], datasets: [{ data: [1], backgroundColor: ['#ccc'] }] }, options: { responsive: true } });
+            } else {
+                currentChart = new Chart(ctx, {
+                    type: 'pie',
+                    data: { labels: ['بدهکار', 'بستانکار'], datasets: [{ data: [debit, credit], backgroundColor: ['#F97316', '#3B82F6'], borderColor: ['#D97706', '#2563EB'], borderWidth: 2 }] },
+                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
+                });
+            }
+        }
+    }
+
+    /* ===================== داده‌ها و دسته‌بندی ===================== */
+    let businessType = "بازرگانی";
+    let mainCategories = [];
+    const catMap = {
+        "بازرگانی": [
+            { name: "درآمدها", accountCodes: ["6001", "6002"], emoji: "📈" },
+            { name: "هزینه‌ها", accountCodes: ["7001", "7002", "7003", "7005", "7006"], emoji: "📉" },
+            { name: "محصولات", accountCodes: ["1201", "1202"], emoji: "📦" },
+            { name: "بدهکاران", accountCodes: ["1101"], emoji: "👥" },
+            { name: "بستانکاران", accountCodes: ["3001"], emoji: "🤝" }
+        ]
+    };
+
+    async function fetchBusiness() {
+        try {
+            const res = await fetch('/user_business_type');
+            const data = await res.json();
+            if (data.type) businessType = data.type;
+        } catch (e) {}
+        document.getElementById('businessBadge').innerText = businessType;
+        await fetchAccounts();
+    }
+
+    async function fetchAccounts() {
+        const res = await fetch('/trial_balance');
+        const data = await res.json();
+        const catDef = catMap[businessType] || catMap["بازرگانی"];
+        mainCategories = catDef.map(c => ({ ...c, accounts: [] }));
+        const accMap = {};
+        data.data.forEach(row => { if (row.debit > 0 || row.credit > 0) accMap[row.code] = row; });
+        mainCategories.forEach(cat => {
+            cat.accounts = [];
+            cat.accountCodes.forEach(code => { if (accMap[code]) cat.accounts.push(accMap[code]); });
+        });
+        renderCategories();
+    }
+
+    function renderCategories() {
+        const container = document.getElementById('categoriesList');
+        if (!container) return;
+        let html = '';
+        mainCategories.forEach((cat, idx) => {
+            const has = cat.accounts.length > 0;
+            html += `<div class="cat-item">
+                        <div class="cat-header" onclick="toggleSub(${idx})">
+                            <span class="cat-title">${cat.emoji} ${cat.name}</span>
+                            <span class="cat-chevron" id="chevron-${idx}">▾</span>
+                        </div>
+                        <div class="sub-accounts" id="sub-${idx}">
+                            ${has ? cat.accounts.map(acc => `<div class="sub-account" onclick="event.stopPropagation(); openDetail('${acc.code}', '${acc.name}', ${acc.debit}, ${acc.credit})">📄 ${acc.name}<span>›</span></div>`).join('') : '<div class="empty-sub">هیچ حسابی ثبت نشده</div>'}
+                        </div>
+                    </div>`;
+        });
+        container.innerHTML = html;
+    }
+
+    window.toggleSub = (id) => {
+        const sub = document.getElementById(`sub-${id}`);
+        const ch = document.getElementById(`chevron-${id}`);
+        if (sub) {
+            sub.classList.toggle('open');
+            ch.innerHTML = sub.classList.contains('open') ? '▴' : '▾';
+        }
+    };
+
+    window.openDetail = async (code, name, debit, credit) => {
+        currentAccountCode = code;
+        document.getElementById('detailTitle').innerHTML = `${name} (${code})`;
+        document.getElementById('detailPage').classList.add('active');
+        renderChart('detailChartCanvas', debit, credit, currentChartType);
+        await loadSubDetails(code);
+    };
+
+    async function loadSubDetails(code) {
+        const container = document.getElementById('subDetailsList');
+        container.innerHTML = 'در حال بارگذاری...';
+        try {
+            const res = await fetch(`/sub_details?code=${code}`);
+            const data = await res.json();
+            if (data.items && data.items.length) {
+                let html = '';
+                data.items.forEach(item => { html += `<div class="sub-detail-item"><span>${item.name}</span><span>${item.value || '—'}</span></div>`; });
+                container.innerHTML = html;
+            } else { container.innerHTML = '<div class="empty-sub">هیچ حساب تفصیلی ثبت نشده</div>'; }
+        } catch (e) { container.innerHTML = '<div class="empty-sub">خطا در دریافت</div>'; }
+    }
+
+    async function updateGross() {
+        const res = await fetch('/trial_balance');
+        const data = await res.json();
+        let income = 0, expense = 0;
+        data.data.forEach(i => {
+            if (i.code === "6001" || i.code === "6002") income += i.credit;
+            if (i.code.startsWith("70") || i.code.startsWith("50")) expense += i.debit;
+        });
+        document.getElementById('grossProfit').innerHTML = (income - expense).toLocaleString() + ' تومان';
+        document.getElementById('totalIncome').innerHTML = income.toLocaleString();
+        document.getElementById('totalExpense').innerHTML = expense.toLocaleString();
+    }
+
+    /* ===================== ثبت سند ===================== */
+    function openVoucherModal() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('voucherModal').classList.add('active');
+    }
+    document.getElementById('openVoucherBtn').onclick = openVoucherModal;
+    document.getElementById('dockVoucher').onclick = openVoucherModal;
+
+    function closeVoucher() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('voucherModal').classList.remove('active');
+        document.getElementById('voucherDesc').value = '';
+    }
+    document.getElementById('cancelVoucherBtn').onclick = closeVoucher;
+    document.getElementById('confirmVoucherBtn').onclick = async () => {
+        const desc = document.getElementById('voucherDesc').value;
+        if (!desc.trim()) { showToast("متن سند را وارد کنید", true); return; }
+        const res = await fetch('/create_voucher', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'description=' + encodeURIComponent(desc)
+        });
+        const json = await res.json();
+        showToast(msgOf(json, 'خطایی رخ داد'), !json.success);
+        closeVoucher();
+        updateGross();
+        fetchAccounts();
+    };
+
+    /* ===================== فرمان صوتی ===================== */
+    let mediaRec, audioChunks = [];
+    async function startVoiceRec() {
+        audioChunks = [];
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRec = new MediaRecorder(stream);
+        mediaRec.ondataavailable = e => audioChunks.push(e.data);
+        mediaRec.onstop = async () => {
+            const blob = new Blob(audioChunks, { type: 'audio/webm' });
+            const fd = new FormData(); fd.append('voice', blob);
+            const resp = await fetch('/process_voice', { method: 'POST', body: fd });
+            const json = await resp.json();
+            showToast(msgOf(json, 'ثبت شد'), !json.success);
+            updateGross();
+            fetchAccounts();
+            stream.getTracks().forEach(t => t.stop());
+        };
+        mediaRec.start();
+        const micBtn = document.getElementById('bigMicIcon');
+        micBtn.classList.add('recording');
+        micBtn.innerHTML = '<span class="mic-icon-new"></span> در حال ضبط...';
+        document.getElementById('voiceStatusText').innerHTML = '🔴 در حال ضبط ... رها کنید';
+    }
+
+    function stopVoiceRec() {
+        if (mediaRec && mediaRec.state === 'recording') mediaRec.stop();
+        const micBtn = document.getElementById('bigMicIcon');
+        micBtn.classList.remove('recording');
+        micBtn.innerHTML = '<span class="mic-icon-new"></span> ضبط صدا';
+        document.getElementById('voiceStatusText').innerHTML = 'در حال پردازش...';
+        setTimeout(() => closeVoiceModal(), 600);
+    }
+
+    function openVoiceModal() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('voiceModal').classList.add('active');
+    }
+
+    function closeVoiceModal() {
+        if (mediaRec && mediaRec.state === 'recording') mediaRec.stop();
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('voiceModal').classList.remove('active');
+        const micBtn = document.getElementById('bigMicIcon');
+        micBtn.classList.remove('recording');
+        micBtn.innerHTML = '<span class="mic-icon-new"></span> ضبط صدا';
+        document.getElementById('voiceStatusText').innerHTML = 'دکمه را نگه دارید و صحبت کنید';
+    }
+
+    const voiceBtnMain = document.getElementById('voiceMainBtn');
+    voiceBtnMain.addEventListener('mousedown', () => { openVoiceModal(); startVoiceRec(); });
+    voiceBtnMain.addEventListener('mouseup', stopVoiceRec);
+    voiceBtnMain.addEventListener('touchstart', (e) => { e.preventDefault(); openVoiceModal(); startVoiceRec(); });
+    voiceBtnMain.addEventListener('touchend', (e) => { e.preventDefault(); stopVoiceRec(); });
+    document.getElementById('dockVoice').onclick = () => { openVoiceModal(); };
+    document.getElementById('closeVoiceBtn').onclick = closeVoiceModal;
+
+    /* ===================== جزئیات حساب ===================== */
+    document.getElementById('closeDetailBtn').onclick = () => {
+        document.getElementById('detailPage').classList.remove('active');
+        if (currentChart) currentChart.destroy();
+    };
+
+    document.querySelectorAll('.chart-type').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            document.querySelectorAll('.chart-type').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentChartType = btn.getAttribute('data-type');
+            if (currentAccountCode) {
+                const res = await fetch('/trial_balance');
+                const data = await res.json();
+                const row = data.data.find(r => r.code === currentAccountCode);
+                if (row) renderChart('detailChartCanvas', row.debit, row.credit, currentChartType);
+            }
+        });
+    });
+
+    async function askNarin() {
+        if (!currentAccountCode) { showToast("ابتدا یک حساب را انتخاب کنید", true); return; }
+        showToast("🤖 در حال تحلیل...", false);
+        try {
+            const res = await fetch(`/ai_query?code=${currentAccountCode}`);
+            const data = await res.json();
+            showToast(data.explanation || 'هیچ توضیحی یافت نشد', false);
+        } catch (e) { showToast("خطا در ارتباط", true); }
+    }
+    document.getElementById('askAiBtn').onclick = askNarin;
+
+    /* ===================== پروفایل و خروج ===================== */
+    function openProfileSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('profileSheet').classList.add('active');
+        const info = document.getElementById('profileLicenseInfo');
+        info.textContent = 'در حال بارگذاری...';
+        fetch('/license_status').then(r => r.json()).then(data => {
+            if (data.is_valid) {
+                info.innerHTML = `وضعیت اشتراک: <b>فعال</b><br>پلن: ${data.plan_type || '—'}<br>اعتبار تا: ${data.end_date || '—'}<br>${data.message || ''}`;
+            } else {
+                info.innerHTML = data.message || 'وضعیت اشتراک نامشخص است.';
+            }
+        }).catch(() => { info.textContent = 'خطا در دریافت وضعیت حساب.'; });
+    }
+    function closeProfileSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('profileSheet').classList.remove('active');
+    }
+    document.getElementById('profileTile').onclick = openProfileSheet;
+    document.getElementById('dockProfile').onclick = openProfileSheet;
+    document.getElementById('closeProfileBtn').onclick = closeProfileSheet;
+    document.getElementById('logoutBtn').onclick = async () => {
+        await fetch('/logout');
+        location.reload();
+    };
+
+    document.getElementById('pricingTile').onclick = () => { location.href = '/pricing'; };
+    document.getElementById('dockReports').onclick = () => {
+        document.querySelector('.section-header').scrollIntoView({ behavior: 'smooth' });
+    };
+
+    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); });
+
+    checkAuthAndInit();
+</script>
+</body>
+</html>

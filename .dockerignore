@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+.env
+*.db
+logs/
+voice_temp/
+voice_files/
+*.pdf
+*.png
+.git/
+.gitignore
+README.md

@@ -1,0 +1,559 @@
+import sys
+import os
+import re
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.logging_config import setup_logging
+setup_logging()
+
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from core.accounting_engine import AccountingEngine
+from core.text_command_handler import TextCommandHandler
+from core.smart_dialog_engine import SmartDialogEngine
+from ai_handlers.voice_to_accounting import VoiceToAccounting
+from datetime import datetime
+import asyncio
+
+from core.auth import AuthManager
+from core.notifications import NotificationService
+from core.license_manager import LicenseManager
+from ai_handlers.llm_processor import LLMProcessor
+from config import TELEGRAM_TOKEN
+
+BOT_NAME = "نارین"
+
+class TelegramBot:
+    def __init__(self) -> None:
+        self.engine = AccountingEngine()
+        self.text_handler = TextCommandHandler(self.engine)
+        self.dialog = SmartDialogEngine(self.engine)
+        self.voice_handler = VoiceToAccounting(model_size="base")
+        self.auth_manager = AuthManager()
+        self.notifier = NotificationService()
+        self.license_manager = LicenseManager()
+        self.llm = LLMProcessor()
+
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        telegram_id = str(update.effective_user.id)
+        user_id = self.auth_manager.get_user_by_telegram(telegram_id)
+        context.user_data["state"] = None
+
+        if user_id:
+            user = update.effective_user
+            name = user.full_name or "کاربر"
+            await update.message.reply_text(
+                f"سلام {name} جان! 👋\n\n"
+                f"من {BOT_NAME} هستم 🤖 حسابدار شخصی شما\n"
+                "هر وقت نیاز به ثبت سند داری، بهم بگو.\n\n"
+                "📝 مثال:\n"
+                "• خرید ۱۰۰ عدد خودکار ۵۰۰۰ تومان از شرکت آذر\n"
+                "• علی کریمی ۵۰۰ هزار تومان پول زد\n"
+                "• پرداخت به شرکت آذر ۲۰۰ هزار تومان\n"
+                "• مانده حساب علی کریمی\n\n"
+                "🎤 می‌تونی ویس هم بفرستی!\n"
+                "📊 /report برای گزارش\n"
+                "📋 /help برای راهنما\n"
+                "📱 /app برای برنامه"
+            )
+        else:
+            await update.message.reply_text(
+                f"سلام! 👋 من {BOT_NAME} هستم 🤖\n"
+                "حسابدار شخصی و هوشمند شما\n\n"
+                "به نظر میاد اولین باره که با من کار می‌کنی.\n"
+                "بیا اول ثبت نامت رو تکمیل کنیم.\n\n"
+                "❓ لطفاً نام و نام خانوادگی خودت رو بگو:"
+            )
+            context.user_data["state"] = "onboarding_name"
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text(
+            f"📋 راهنمای {BOT_NAME}\n\n"
+            "/start - شروع مجدد\n"
+            "/report - دریافت گزارش PDF\n"
+            "/status - وضعیت اشتراک\n"
+            "/pricing - قیمت پلن‌ها\n"
+            "/help - این راهنما\n"
+            "/app - برنامه اختصاصی\n\n"
+            "📝 ثبت سند با متن:\n"
+            "• خرید ۱۰۰ عدد خودکار ۵۰۰۰ تومان\n"
+            "• فروش ۵۰ عدد کتاب ۲۰۰۰۰ تومان\n"
+            "• علی کریمی ۵۰۰ هزار تومان پول زد\n"
+            "• پرداخت به شرکت آذر ۲۰۰ هزار تومان\n"
+            "• مانده حساب علی کریمی\n"
+            "• پرداخت اجاره مغازه ۱۰ میلیون تومان\n\n"
+            "🎤 ثبت سند با ویس:\n"
+            "یک ویس بفرست. خودم تشخیص می‌دم."
+        )
+
+    def _clean_name(self, raw: str) -> str:
+        words_to_remove = ["هستم", "من", "اسم", "نام", "بنده", "حقیر"]
+        for w in words_to_remove:
+            raw = raw.replace(w, "")
+        return raw.strip()
+
+    def _normalize_business_type(self, raw: str) -> str:
+        mapping = {
+            "اهن": "آهن‌آلات", "آهن": "آهن‌آلات", "فلز": "آهن‌آلات",
+            "بازرگانی": "بازرگانی عمومی", "بازرگانی عمومی": "بازرگانی عمومی",
+            "خدمات": "خدماتی", "خدماتی": "خدماتی",
+            "تولید": "تولیدی", "تولیدی": "تولیدی",
+            "پیمانکاری": "پیمانکاری", "پیمانکاری": "پیمانکاری",
+            "غذا": "مواد غذایی", "مواد غذایی": "مواد غذایی",
+            "لباس": "پوشاک", "پوشاک": "پوشاک",
+            "آرایش": "آرایشگاهی", "آرایشگاهی": "آرایشگاهی",
+        }
+        return mapping.get(raw.strip(), raw.strip())
+
+    async def handle_onboarding(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text.strip()
+        state = context.user_data.get("state")
+        telegram_id = str(update.effective_user.id)
+        user_id = self.auth_manager.get_user_by_telegram(telegram_id)
+
+        if state == "onboarding_name":
+            cleaned = self._clean_name(text)
+            context.user_data["reg_name"] = cleaned
+            context.user_data["state"] = "onboarding_business_type"
+            await update.message.reply_text(
+                f"خوشحالم {cleaned} جان! 😊\n\n"
+                "کسب و کارت تو چه زمینه‌ایه؟\n"
+                "مثلاً: بازرگانی عمومی، آهن‌آلات، آرایشگاهی، مواد غذایی، پوشاک، خدمات"
+            )
+
+        elif state == "onboarding_business_type":
+            normalized = self._normalize_business_type(text)
+            context.user_data["reg_business_type"] = normalized
+            if user_id:
+                profile = self.auth_manager.get_user_profile(user_id)
+                name = profile["name"] if profile else "کاربر"
+                context.user_data["reg_name"] = name
+                context.user_data["state"] = "onboarding_business_name"
+                await update.message.reply_text(
+                    f"{name} جان، اسم کسب و کارت چیه؟\n"
+                    "مثلاً: البرز فلز، شرکت آذر، فروشگاه بهار"
+                )
+            else:
+                context.user_data["state"] = "onboarding_business_name"
+                await update.message.reply_text(
+                    "عالیه! اسم کسب و کارت چیه؟\n"
+                    "مثلاً: البرز فلز، شرکت آذر، فروشگاه بهار"
+                )
+
+        elif state == "invoice_customer":
+            context.user_data["invoice_customer_name"] = text
+            context.user_data["state"] = "invoice_items"
+            await update.message.reply_text(
+                "چی براش فاکتور شد؟ مبلغ و توضیحات رو بگو:\n"
+                "مثلاً: فروش ۵ تن مفتول گالوانیزه ۱۲۰,۰۰۰,۰۰۰ تومان"
+            )
+
+        elif state == "invoice_items":
+            invoice_type = context.user_data.get("invoice_type", "invoice")
+            customer = context.user_data.get("invoice_customer_name", "مشتری")
+            description = text
+            numbers = re.findall(r'[\d,]+', text.replace(",", ""))
+            if numbers:
+                amount = int(numbers[-1])
+            else:
+                amount = 0
+
+            context.user_data["state"] = None
+            if amount < 1000:
+                await update.message.reply_text(
+                    "مبلغ تشخیص داده نشد یا خیلی کمه.\n"
+                    "لطفاً مبلغ رو به تومان بگو:\n"
+                    "مثلاً: فروش ۵۰ عدد کتاب ۲,۰۰۰,۰۰۰ تومان"
+                )
+                return
+
+            entry_id = self.engine.create_voucher(
+                date=datetime.now(),
+                description=f"{'پیش‌فاکتور' if invoice_type == 'proforma' else 'فاکتور'} برای {customer}: {description}",
+                lines=[
+                    ("1201", amount, 'debit'),
+                    ("4001", amount, 'credit')
+                ]
+            )
+            msg_type = "پیش‌فاکتور" if invoice_type == "proforma" else "فاکتور"
+            await update.message.reply_text(
+                f"✅ {msg_type} برای {customer} ثبت شد.\n"
+                f"📋 شماره سند: {entry_id}\n"
+                f"💰 مبلغ: {amount:,} تومان\n"
+                f"📝 شرح: {description[:100]}"
+            )
+
+        elif state == "onboarding_business_name":
+            biz_type = context.user_data.get("reg_business_type", "بازرگانی عمومی")
+            biz_name = text
+
+            if user_id:
+                self.auth_manager.update_user_profile(
+                    user_id, business_type=biz_type, business_name=biz_name
+                )
+                context.user_data["state"] = None
+                await update.message.reply_text(
+                    f"✅ اطلاعات کسب و کارت ذخیره شد!\n"
+                    f"نوع: {biz_type}\n"
+                    f"نام: {biz_name}\n\n"
+                    "حالا می‌تونیم شروع کنیم. هر سندی داری بگو!"
+                )
+            else:
+                name = context.user_data.get("reg_name", "کاربر")
+                mobile = f"tg_{telegram_id}"
+                user_id = self.auth_manager.get_or_create_user(mobile, name)
+                self.auth_manager.link_telegram(user_id, telegram_id)
+                self.auth_manager.update_user_profile(
+                    user_id, business_type=biz_type, business_name=biz_name
+                )
+                self.license_manager.generate_license_key(user_id, "free_trial")
+                context.user_data["state"] = None
+                await update.message.reply_text(
+                    f"✅ ثبت نام با موفقیت انجام شد!\n\n"
+                    f"📋 خلاصه اطلاعات:\n"
+                    f"نام: {name}\n"
+                    f"کسب و کار: {biz_name} ({biz_type})\n\n"
+                    f"یک لایسنس آزمایشی ۵۰ سندی برات فعال کردم.\n"
+                    f"حالا می‌تونیم شروع کنیم!\n\n"
+                    "📝 مثال:\n"
+                    "• خرید ۱۰۰ عدد خودکار ۵۰۰۰ تومان\n"
+                    "• علی کریمی ۵۰۰ هزار تومان پول زد\n"
+                    "• مانده حساب علی کریمی\n"
+                    "• پرداخت اجاره ۱۰ میلیون تومان\n\n"
+                    "💡 نکته: بعداً می‌تونی با فرستادن «اطلاعات من» بقیه اطلاعات (تلفن، شناسه ملی، کد اقتصادی) رو تکمیل کنی."
+                )
+
+    async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text.strip()
+        if text.startswith("/"):
+            return
+
+        telegram_id = str(update.effective_user.id)
+        user_id = self.auth_manager.get_user_by_telegram(telegram_id)
+
+        if context.user_data.get("state"):
+            await self.handle_onboarding(update, context)
+            return
+
+        if not user_id:
+            await update.message.reply_text(
+                f"سلام! من {BOT_NAME} هستم 🤖\n"
+                "به نظر میاد هنوز ثبت نام نکردی.\n"
+                "برای شروع /start رو بزن."
+            )
+            return
+
+        # بررسی کامل بودن پروفایل کاربر
+        profile = self.auth_manager.get_user_profile(user_id)
+        if profile and (not profile["business_type"] or not profile["business_name"]):
+            context.user_data["state"] = "onboarding_business_type"
+            await update.message.reply_text(
+                f"{profile['name']} جان، اطلاعات کسب و کارت هنوز کامل نیست!\n\n"
+                "کسب و کارت تو چه زمینه‌ایه؟\n"
+                "مثلاً: بازرگانی عمومی، آهن‌آلات، آرایشگاهی، مواد غذایی، پوشاک، خدمات"
+            )
+            return
+
+        # تشخیص درخواست فاکتور/پیش‌فاکتور
+        invoice_keywords = ["فاکتور میخوام", "فاکتور کن", "فاکتور بزن", "فاکتور بده", "فاکتور برام", "برام فاکتور",
+                           "پیش فاکتور", "پیش‌فاکتور", "پیشفاکتور",
+                           "proforma", "invoice"]
+        if any(k in text for k in invoice_keywords):
+            is_proforma = "پیش" in text or "proforma" in text.lower()
+            context.user_data["invoice_type"] = "proforma" if is_proforma else "invoice"
+            context.user_data["state"] = "invoice_customer"
+            await update.message.reply_text(
+                "نام مشتری رو بگو:\n"
+                "مثلاً: علی کریمی"
+            )
+            return
+
+        # تشخیص درخواست تصحیح/ویرایش اطلاعات
+        correction_words = ["اشتباه", "اصلاح", "ویرایش", "تصحیح", "ببخشید", "غلط", "edit", "correct"]
+        if any(c in text for c in correction_words):
+            context.user_data["state"] = "onboarding_business_type"
+            await update.message.reply_text(
+                "باشه اطلاعات قبلی رو تصحیح می‌کنیم.\n"
+                "کسب و کارت تو چه زمینه‌ایه؟\n"
+                "مثلاً: آهن‌آلات، بازرگانی عمومی، خدمات، تولیدی"
+            )
+            return
+
+        # تشخیص سلام و احوالپرسی
+        greetings = ["سلام", "علیک", "درود", "خوبی", "hi", "hello", "slm", "سلا", "مرسی", "ممنون", "چطوری", "خوبم"]
+        if any(g in text for g in greetings) and not any(k in text for k in ["خرید", "فروش", "پرداخت", "دریافت", "پول", "هزار", "میلیون", "تومان"]):
+            await update.message.reply_text(
+                f"سلام! {BOT_NAME} هستم 🤖 حسابدار شخصی شما\n"
+                "هر کاری داری بگو. می‌تونم:\n\n"
+                "📝 ثبت سند حسابداری\n"
+                "💰 مانده حساب مشتریان\n"
+                "📊 گزارش بگیرم\n"
+                "🎤 ویس تو بفهمم\n\n"
+                "چطور می‌تونم کمکت کنم؟"
+            )
+            return
+
+        # سوال درباره کسب و کار یا پروفایل (کلمات کلیدی گسترده)
+        profile_keywords = ["کسب", "کارم", "شغل", "پروفایل", "اطلاعات", "لوگو", "شماره",
+                           "تلفن", "شناسه", "اقتصادی", "کد ملی", "کد اقتصادی", "آدرس", "ثبت",
+                           "دفتر", "همراه", "logo", "address", "phone",
+                           "اطلاعات من", "پروفایل من"]
+        if any(k in text for k in profile_keywords):
+            profile = self.auth_manager.get_user_profile(user_id)
+            if not profile:
+                await update.message.reply_text("اول /start رو بزن.")
+                return
+            has_info = profile["business_type"] or profile["business_name"]
+            if has_info:
+                await update.message.reply_text(
+                    f"📋 اطلاعات ثبت شده شما:\n"
+                    f"نام: {profile['name']}\n"
+                    f"کسب و کار: {profile['business_name'] or '-'}\n"
+                    f"نوع فعالیت: {profile['business_type'] or '-'}\n"
+                    f"تلفن دفتر: {profile['phone_office'] or '-'}\n"
+                    f"تلفن همراه: {profile['phone_mobile'] or '-'}\n"
+                    f"شناسه ملی: {profile['national_id'] or '-'}\n"
+                    f"کد اقتصادی: {profile['economic_code'] or '-'}\n"
+                    f"آدرس: {profile['address'] or '-'}\n\n"
+                    "برای ویرایش هرکدوم، دقیقاً بنویس:\n"
+                    "مثلاً:\n"
+                    "تلفن دفتر: ۰۲۱۱۲۳۴۵۶۷۸\n"
+                    "شناسه ملی: ۱۲۳۴۵۶۷۸۹۰\n"
+                    "کد اقتصادی: ۱۲۳۴۵۶۷۸۹۰"
+                )
+            else:
+                context.user_data["state"] = "onboarding_business_type"
+                await update.message.reply_text(
+                    "هنوز اطلاعات کسب و کارت رو ثبت نکردی!\n"
+                    "کسب و کارت تو چه زمینه‌ایه؟\n"
+                    "مثلاً: بازرگانی عمومی، آهن‌آلات، آرایشگاهی، مواد غذایی، پوشاک، خدمات"
+                )
+            return
+
+        # تشخیص تغییر اسم کسب و کار (مثلاً "اسم مغازم البرز فلزه")
+        if "اسم" in text and ("کسب" in text or "مغازه" in text or "فروشگاه" in text or "business" in text):
+            for prefix in ["اسم کسب و کارم", "اسم کسب و کار", "اسم مغازهم", "اسم مغازم", "اسم مغازه", "اسم فروشگاهم", "اسم فروشگاه"]:
+                if prefix in text:
+                    new_name = text.split(prefix)[-1].strip()
+                    new_name = re.sub(r'[هست]=|[هست]|ه$', '', new_name).strip()
+                    if new_name:
+                        self.auth_manager.update_user_profile(user_id, business_name=new_name)
+                        await update.message.reply_text(f"✅ اسم کسب و کار به «{new_name}» تغییر یافت.")
+                        return
+
+        # تشخیص درخواست ویرایش پروفایل (چند خطی)
+        field_map = {
+            "تلفن دفتر": "phone_office", "phone": "phone_office", "تلفن": "phone_office",
+            "تلفن همراه": "phone_mobile", "mobile": "phone_mobile", "موبایل": "phone_mobile",
+            "شناسه ملی": "national_id", "شناسه": "national_id", "ملی": "national_id",
+            "کد اقتصادی": "economic_code", "اقتصادی": "economic_code",
+            "آدرس": "address", "ادرس": "address", "address": "address",
+        }
+        updated_fields = []
+        for line in text.split("\n"):
+            line = line.strip()
+            match = re.match(r'(تلفن دفتر|تلفن همراه|شناسه ملی|کد اقتصادی|آدرس|ادرس|شناسه|ملی|اقتصادی|تلفن|موبایل|phone|mobile|address)\s*[:=]?\s*(.+)', line, re.I)
+            if match:
+                key = match.group(1).strip()
+                value = match.group(2).strip()
+                field = field_map.get(key, "")
+                if field and value:
+                    self.auth_manager.update_user_profile(user_id, **{field: value})
+                    updated_fields.append(key)
+        if updated_fields:
+            await update.message.reply_text(f"✅ {', '.join(updated_fields)} با موفقیت ذخیره شد.")
+            return
+
+        # ===== پردازش با LLM =====
+        result = await asyncio.to_thread(self.llm.process, text)
+
+        if result.get("error") in ("no_api_key", "ollama_offline"):
+            await self._process_rule_based(update, context, user_id, text)
+            return
+        elif result.get("error") == "timeout":
+            await self._process_rule_based(update, context, user_id, text)
+            return
+
+        if result.get("success"):
+            amount = result.get("amount", 0)
+            if amount <= 1000:
+                await update.message.reply_text(
+                    f"🤔 مبلغ {amount:,} تومان تشخیص داده شد که خیلی کم به نظر میرسه.\n"
+                    "لطفاً مبلغ رو با عدد به تومان بگو:\n"
+                    "مثلاً: خرید ۱۰۰ خودکار ۵۰۰۰ تومان\n"
+                    "یا: مبلغ ۵۰۰۰۰۰ تومان"
+                )
+                return
+            entry_id = self.engine.create_voucher(
+                date=datetime.now(),
+                description=result["description"],
+                lines=[
+                    (result["debit_account"], amount, 'debit'),
+                    (result["credit_account"], amount, 'credit')
+                ]
+            )
+            await update.message.reply_text(
+                f"✅ سند شماره {entry_id} ثبت شد.\n"
+                f"💰 مبلغ: {amount:,} تومان\n"
+                f"📝 شرح: {result['description'][:100]}\n"
+                f"📊 بدهکار: {self.get_account_name(result['debit_account'])}\n"
+                f"📊 بستانکار: {self.get_account_name(result['credit_account'])}"
+            )
+            await self.send_notification_if_needed(update, user_id)
+        elif result.get("type") == "general":
+            await update.message.reply_text(result["message"])
+        else:
+            await self._process_rule_based(update, context, user_id, text)
+
+    async def _process_rule_based(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                  user_id: int, text: str) -> None:
+        account_keywords = ["خرید", "فروش", "پرداخت", "دریافت", "پول", "تومان", "ریال",
+                           "هزار", "میلیون", "میلیارد", "سند", "حساب", "مشتری", "فروشنده",
+                           "بدهکار", "بستانکار", "مانده", "قرض", "حواله", "چک", "سفته",
+                           "اجاره", "حقوق", "قبض", "صورتحساب", "فاکتور", "پیش فاکتور"]
+        has_ak = any(k in text for k in account_keywords)
+        has_num = bool(re.search(r'\d+', text))
+        if not has_ak and not has_num:
+            await update.message.reply_text(
+                f"😊 سلام! من {BOT_NAME} هستم.\n"
+                "اگر سوال حسابداری داری، بپرس.\n"
+                "مثال:\n"
+                "• خرید ۱۰۰ عدد خودکار ۵۰۰۰ تومان\n"
+                "• علی کریمی ۵۰۰ هزار تومان پول زد\n"
+                "• پرداخت اجاره ۱۰ میلیون\n"
+                "• اطلاعات من\n\n"
+                "یا /help"
+            )
+            return
+        response = self.dialog.process_message(user_id, text)
+        if "متوجه نشدم" in response:
+            fallback = self.text_handler.parse_and_create_voucher(text)
+            if fallback.get("success"):
+                await update.message.reply_text(fallback["message"])
+                await self.send_notification_if_needed(update, user_id)
+                return
+            await update.message.reply_text(
+                f"🤔 متوجه منظورت نشدم.\n\n"
+                "مثل اینا بهم بگو:\n"
+                "• خرید ۱۰۰ عدد خودکار ۵۰۰۰ تومان\n"
+                "• علی کریمی ۵۰۰ هزار تومان پول زد\n"
+                "• پرداخت به شرکت آذر ۲۰۰ هزار تومان\n"
+                "• مانده حساب علی کریمی\n"
+                "• پرداخت اجاره ۱۰ میلیون تومان\n\n"
+                "یا /help برای راهنما"
+            )
+        else:
+            await update.message.reply_text(response)
+            await self.send_notification_if_needed(update, user_id)
+
+    async def handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        try:
+            telegram_id = str(update.effective_user.id)
+            user_id = self.auth_manager.get_user_by_telegram(telegram_id)
+            if not user_id:
+                await update.message.reply_text("اول /start رو بزن تا ثبت نام کنی.")
+                return
+
+            await update.message.reply_text(f"🎤 {BOT_NAME} داره ویس تو گوش می‌کنه...")
+
+            voice_file = await update.message.voice.get_file()
+            file_path = f"voice_files/{update.message.message_id}.ogg"
+            await voice_file.download_to_drive(file_path)
+
+            data, transcript = self.voice_handler.voice_to_voucher(file_path)
+
+            if data["type"] and data["amount"] > 0:
+                entry_id = self.engine.create_voucher(
+                    date=datetime.now(),
+                    description=data["description"],
+                    lines=[
+                        (data["debit_account"], data["amount"], 'debit'),
+                        (data["credit_account"], data["amount"], 'credit')
+                    ]
+                )
+                await update.message.reply_text(
+                    f"✅ سند شماره {entry_id} ثبت شد.\n\n"
+                    f"💰 مبلغ: {data['amount']:,} تومان\n"
+                    f"📝 شرح: {data['description'][:100]}\n"
+                    f"📊 بدهکار: {self.get_account_name(data['debit_account'])}\n"
+                    f"📊 بستانکار: {self.get_account_name(data['credit_account'])}"
+                )
+                await self.send_notification_if_needed(update, user_id)
+            else:
+                await update.message.reply_text(
+                    "⚠️ متوجه ویس تو نشدم. لطفاً واضح‌تر بگو.\n"
+                    "مثال: خرید ۱۰۰ عدد خودکار ۵۰۰۰ تومان"
+                )
+        except Exception as e:
+            await update.message.reply_text(f"❌ خطا: {str(e)}")
+
+    def get_account_name(self, code: str) -> str:
+        from core.iran_accounting_codes import get_account_name
+        return get_account_name(code)
+
+    async def report(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        try:
+            await update.message.reply_text("📊 در حال تولید گزارش...")
+            from reports.pdf_generator import PDFReportGenerator
+            reporter = PDFReportGenerator(self.engine)
+            pdf_file = reporter.create_trial_balance_pdf("temp_report.pdf")
+            await update.message.reply_document(document=open(pdf_file, 'rb'))
+        except Exception as e:
+            await update.message.reply_text(f"❌ خطا: {str(e)}")
+
+    async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        telegram_id = str(update.effective_user.id)
+        user_id = self.auth_manager.get_user_by_telegram(telegram_id)
+        if not user_id:
+            await update.message.reply_text("اول /start رو بزن تا ثبت نام کنی.")
+            return
+        status = self.license_manager.check_license(user_id)
+        if status["is_valid"]:
+            days = status.get("days_left", 0)
+            plan = status.get("plan_type", "آزمایشی")
+            used = status.get("used_vouchers", 0)
+            max_v = status.get("max_vouchers", 0)
+            msg = f"📋 وضعیت اشتراک:\nپلن: {plan}\nروزهای باقی مانده: {days}\n"
+            if max_v > 0:
+                msg += f"اسناد استفاده شده: {used} از {max_v}"
+            else:
+                msg += f"تعداد اسناد: {used} (نامحدود)"
+            await update.message.reply_text(msg)
+        else:
+            await update.message.reply_text(status.get("message", "اشتراک شما منقضی شده."))
+
+    async def pricing_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        plans = self.license_manager.get_pricing_message()
+        await update.message.reply_text(plans)
+
+    async def app_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text(
+            f"برنامه {BOT_NAME}:\n"
+            "http://localhost:8000/\n\n"
+            "توی مرورگر گوشیت باز کن (HTTPS لازم: بعد از دیپلوی)"
+        )
+
+    async def send_notification_if_needed(self, update: Update, user_id: int):
+        msg = self.notifier.check_renewal_reminder(user_id)
+        if msg:
+            await update.message.reply_text(msg)
+        limit_msg = self.notifier.get_voucher_limit_warning(user_id)
+        if limit_msg:
+            await update.message.reply_text(limit_msg)
+
+    def run(self) -> None:
+        app = Application.builder().token(TELEGRAM_TOKEN).build()
+        app.add_handler(CommandHandler("start", self.start))
+        app.add_handler(CommandHandler("help", self.help_command))
+        app.add_handler(CommandHandler("report", self.report))
+        app.add_handler(CommandHandler("status", self.status_command))
+        app.add_handler(CommandHandler("pricing", self.pricing_command))
+        app.add_handler(CommandHandler("app", self.app_command))
+        app.add_handler(MessageHandler(filters.VOICE, self.handle_voice))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
+        print(f"🤖 {BOT_NAME} روشن شد...")
+        app.run_polling()
+
+if __name__ == "__main__":
+    bot = TelegramBot()
+    bot.run()
