@@ -10,7 +10,7 @@ from typing import Optional, Dict
 from sqlalchemy.orm import sessionmaker
 from database.models import init_db
 from database.license_models import User, License
-from config import KAVENEGAR_API_KEY
+from config import FARAPAYAMAK_USERNAME, FARAPAYAMAK_PASSWORD
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class AuthManager:
             from core.sms_service import send_otp_sms
             send_otp_sms(mobile, code)
             result = {"success": True, "message": "کد تایید برای شما ارسال شد."}
-            if not KAVENEGAR_API_KEY:
+            if not FARAPAYAMAK_USERNAME or not FARAPAYAMAK_PASSWORD:
                 # حالت توسعه: چون پیامک واقعی ارسال نمی‌شود، کد برای تست مستقیم در پاسخ برگردانده می‌شود.
                 result["dev_code"] = code
                 result["message"] = "حالت توسعه: پیامک واقعی متصل نیست، کد تایید مستقیماً نمایش داده می‌شود."

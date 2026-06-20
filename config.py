@@ -12,8 +12,9 @@ ZARINPAL_CALLBACK_URL = os.getenv("ZARINPAL_CALLBACK_URL", "")
 ADMIN_PHONE = os.getenv("ADMIN_PHONE", "09120000000")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-KAVENEGAR_API_KEY = os.getenv("KAVENEGAR_API_KEY", "")
-KAVENEGAR_SENDER = os.getenv("KAVENEGAR_SENDER", "")
+FARAPAYAMAK_USERNAME = os.getenv("FARAPAYAMAK_USERNAME", "")
+FARAPAYAMAK_PASSWORD = os.getenv("FARAPAYAMAK_PASSWORD", "")
+FARAPAYAMAK_SENDER = os.getenv("FARAPAYAMAK_SENDER", "")
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
 def validate_config():

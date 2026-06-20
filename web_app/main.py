@@ -226,8 +226,9 @@ async def pricing() -> HTMLResponse:
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>خرید اشتراک | حسابدار هوشمند</title>
+        <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
         <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
+            * { margin: 0; padding: 0; box-sizing: border-box; font-family: inherit; }
             body {
                 font-family: 'Vazirmatn', 'Segoe UI', Tahoma, sans-serif;
                 background: linear-gradient(135deg, #0f2b3d 0%, #1a4a6f 100%);
