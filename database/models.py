@@ -95,6 +95,19 @@ class JournalLine(Base):
     amount = Column(Float)
     description = Column(String(200))
 
+
+class FiscalYearClosing(Base):
+    """ثبت بستن سال مالی برای هر کاربر/کسب‌وکار - دوره‌های بسته‌شده دیگر قابل ثبت سند نیستند."""
+    __tablename__ = 'fiscal_year_closings'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    fiscal_year_label = Column(String(20))  # مثلاً "1403"
+    period_start = Column(DateTime, nullable=False)
+    period_end = Column(DateTime, nullable=False)
+    closing_entry_id = Column(Integer, ForeignKey('journal_entries.id'), nullable=True)
+    net_result = Column(Float, default=0)  # سود (مثبت) یا زیان (منفی) شناسایی‌شده
+    closed_at = Column(DateTime, default=datetime.now)
+
 class SellerProfile(Base):
     __tablename__ = 'seller_profiles'
     id = Column(Integer, primary_key=True)

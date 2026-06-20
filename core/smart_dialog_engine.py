@@ -189,7 +189,7 @@ class SmartDialogEngine:
         
         return "لطفاً اطلاعات کامل‌تر بگویید."
     
-    def process_payment_received(self, entities: Dict) -> Dict:
+    def process_payment_received(self, entities: Dict, user_id: Optional[int] = None) -> Dict:
         """پردازش ثبت دریافت پول از مشتری"""
         session = self.engine.Session()
         try:
@@ -218,7 +218,8 @@ class SmartDialogEngine:
                 lines=[
                     ('1001', amount, 'debit'),
                     ('1101', amount, 'credit')
-                ]
+                ],
+                user_id=user_id
             )
             
             return {
@@ -230,7 +231,7 @@ class SmartDialogEngine:
         finally:
             session.close()
     
-    def process_payment_sent(self, entities: Dict) -> Dict:
+    def process_payment_sent(self, entities: Dict, user_id: Optional[int] = None) -> Dict:
         """پردازش ثبت پرداخت به تامین‌کننده"""
         session = self.engine.Session()
         try:
@@ -261,7 +262,8 @@ class SmartDialogEngine:
                 lines=[
                     ('2001', amount, 'debit'),
                     ('1001', amount, 'credit')
-                ]
+                ],
+                user_id=user_id
             )
             
             return {
@@ -325,10 +327,10 @@ class SmartDialogEngine:
             return intent_data['suggested_question']
         
         if intent_data['intent'] == 'payment_received':
-            result = self.process_payment_received(intent_data['entities'])
+            result = self.process_payment_received(intent_data['entities'], user_id=user_id)
             return result['message']
         elif intent_data['intent'] == 'payment_sent':
-            result = self.process_payment_sent(intent_data['entities'])
+            result = self.process_payment_sent(intent_data['entities'], user_id=user_id)
             return result['message']
         elif intent_data['intent'] == 'customer_balance':
             result = self.process_customer_balance(intent_data['entities'])

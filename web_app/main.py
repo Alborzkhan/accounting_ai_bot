@@ -122,7 +122,7 @@ async def create_voucher(request: Request, description: str = Form(...)) -> dict
     if not license_status["allowed"]:
         return {"success": False, "message": license_status["message"]}
     try:
-        result = text_handler.parse_and_create_voucher(description)
+        result = text_handler.parse_and_create_voucher(description, user_id=user_id)
         return {"success": result["success"], "message": result["message"]}
     except Exception:
         logger.exception("create_voucher failed for user_id=%s", user_id)
@@ -157,7 +157,8 @@ async def process_voice(request: Request, voice: UploadFile = File(...)) -> dict
                 lines=[
                     (data["debit_account"], data["amount"], 'debit'),
                     (data["credit_account"], data["amount"], 'credit')
-                ]
+                ],
+                user_id=user_id
             )
             return {
                 "success": True,
@@ -173,8 +174,11 @@ async def process_voice(request: Request, voice: UploadFile = File(...)) -> dict
 
 # تراز آزمایشی
 @app.get("/trial_balance")
-async def get_trial_balance() -> dict:
-    balances = engine.get_trial_balance()
+async def get_trial_balance(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"data": []}
+    balances = engine.get_trial_balance(user_id=user_id)
     data = []
     for row in balances:
         if row.total_debit != 0 or row.total_credit != 0:
@@ -188,11 +192,16 @@ async def get_trial_balance() -> dict:
 
 # لیست آخرین اسناد
 @app.get("/vouchers")
-async def get_vouchers(limit: int = 20) -> dict:
+async def get_vouchers(request: Request, limit: int = 20) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"data": []}
     session = engine.Session()
     try:
         from database.models import JournalEntry
-        entries = session.query(JournalEntry).order_by(
+        entries = session.query(JournalEntry).filter(
+            JournalEntry.user_id == user_id
+        ).order_by(
             JournalEntry.id.desc()
         ).limit(limit).all()
         data = []
@@ -644,7 +653,7 @@ async def api_profit_loss(request: Request) -> dict:
     user_id = get_user_id(request)
     if not user_id:
         return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
-    return engine.get_profit_loss()
+    return engine.get_profit_loss(user_id=user_id)
 
 
 @app.get("/api/balance_sheet")
@@ -652,7 +661,7 @@ async def api_balance_sheet(request: Request) -> dict:
     user_id = get_user_id(request)
     if not user_id:
         return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
-    return engine.get_balance_sheet()
+    return engine.get_balance_sheet(user_id=user_id)
 
 
 @app.get("/api/journal")
@@ -660,7 +669,46 @@ async def api_journal(request: Request, limit: int = 50, offset: int = 0) -> dic
     user_id = get_user_id(request)
     if not user_id:
         return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
-    return {"data": engine.get_journal(limit, offset)}
+    return {"data": engine.get_journal(limit, offset, user_id=user_id)}
+
+
+# ========== بستن سال مالی ==========
+
+@app.get("/accounting/fiscal-year-status")
+async def fiscal_year_status(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    status = engine.get_open_fiscal_years(user_id)
+    return {
+        "success": True,
+        "last_closed_until": status["last_closed_until"].strftime("%Y-%m-%d") if status["last_closed_until"] else None,
+        "last_fiscal_year_label": status["last_fiscal_year_label"],
+        "first_entry_date": status["first_entry_date"].strftime("%Y-%m-%d") if status["first_entry_date"] else None,
+    }
+
+
+@app.post("/accounting/close-fiscal-year")
+async def close_fiscal_year(
+    request: Request,
+    period_start: str = Form(...),
+    period_end: str = Form(...),
+    fiscal_year_label: str = Form(...),
+) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    rate_limit(f"close_fy:{user_id}", max_requests=5, window_seconds=600)
+    try:
+        start_dt = datetime.strptime(period_start, "%Y-%m-%d")
+        end_dt = datetime.strptime(period_end, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+    except ValueError:
+        return {"success": False, "message": "فرمت تاریخ نامعتبر است."}
+    try:
+        return engine.close_fiscal_year(user_id, start_dt, end_dt, fiscal_year_label.strip())
+    except Exception:
+        logger.exception("close_fiscal_year failed for user_id=%s", user_id)
+        return {"success": False, "message": "خطا در بستن سال مالی."}
 
 
 # ========== ADMIN ENDPOINTS ==========

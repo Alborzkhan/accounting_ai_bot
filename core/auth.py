@@ -96,8 +96,17 @@ class AuthManager:
             user.otp_hash = None
             user.otp_expires_at = None
             user.otp_attempts = 0
+            user_id = user.id
             session.commit()
-            return {"success": True, "user_id": user.id, "token": token, "is_new": is_new, "message": "ورود موفق."}
+
+            if is_new:
+                try:
+                    from core.license_manager import LicenseManager
+                    LicenseManager().generate_license_key(user_id, "free_trial")
+                except Exception:
+                    logger.exception("free_trial license issuance failed for user_id=%s", user_id)
+
+            return {"success": True, "user_id": user_id, "token": token, "is_new": is_new, "message": "ورود موفق."}
         except Exception:
             session.rollback()
             logger.exception("verify_otp failed for mobile=%s", mobile)

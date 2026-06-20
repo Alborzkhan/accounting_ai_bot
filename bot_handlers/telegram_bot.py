@@ -173,7 +173,8 @@ class TelegramBot:
                 lines=[
                     ("1201", amount, 'debit'),
                     ("4001", amount, 'credit')
-                ]
+                ],
+                user_id=user_id
             )
             msg_type = "پیش‌فاکتور" if invoice_type == "proforma" else "فاکتور"
             await update.message.reply_text(
@@ -390,7 +391,8 @@ class TelegramBot:
                 lines=[
                     (result["debit_account"], amount, 'debit'),
                     (result["credit_account"], amount, 'credit')
-                ]
+                ],
+                user_id=user_id
             )
             await update.message.reply_text(
                 f"✅ سند شماره {entry_id} ثبت شد.\n"
@@ -427,7 +429,7 @@ class TelegramBot:
             return
         response = self.dialog.process_message(user_id, text)
         if "متوجه نشدم" in response:
-            fallback = self.text_handler.parse_and_create_voucher(text)
+            fallback = self.text_handler.parse_and_create_voucher(text, user_id=user_id)
             if fallback.get("success"):
                 await update.message.reply_text(fallback["message"])
                 await self.send_notification_if_needed(update, user_id)
@@ -469,7 +471,8 @@ class TelegramBot:
                     lines=[
                         (data["debit_account"], data["amount"], 'debit'),
                         (data["credit_account"], data["amount"], 'credit')
-                    ]
+                    ],
+                    user_id=user_id
                 )
                 await update.message.reply_text(
                     f"✅ سند شماره {entry_id} ثبت شد.\n\n"

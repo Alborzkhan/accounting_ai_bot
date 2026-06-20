@@ -14,7 +14,7 @@ class TextCommandHandler:
         self.engine = engine
         self.categorizer = AutoCategorizer()
     
-    def parse_and_create_voucher(self, text: str) -> Dict:
+    def parse_and_create_voucher(self, text: str, user_id: Optional[int] = None) -> Dict:
         """
         تبدیل متن ساده به سند حسابداری و ثبت آن
         مثال: "خرید 100 عدد خودکار از احمدی 5000 تومان"
@@ -95,7 +95,8 @@ class TextCommandHandler:
                 lines=[
                     (result["data"]["debit_account"], result["data"]["amount"], 'debit'),
                     (result["data"]["credit_account"], result["data"]["amount"], 'credit')
-                ]
+                ],
+                user_id=user_id
             )
             result["success"] = True
             result["entry_id"] = entry_id

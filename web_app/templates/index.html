@@ -573,9 +573,26 @@
     <div class="form-row"><label>شماره ثبت شرکت</label><input id="settingsRegNumber" type="text" dir="ltr"></div>
     <div class="hint-text">همه فیلدهای بالا اختیاری هستند و فقط برای فاکتور رسمی استفاده می‌شوند.</div>
 
+    <button class="modal-btn" type="button" id="openFiscalYearBtn" style="margin-bottom:10px;">📕 بستن سال مالی</button>
+
     <div class="modal-buttons">
         <button class="modal-btn" id="closeSettingsBtn">بستن</button>
         <button class="modal-btn modal-btn-primary" id="saveSettingsBtn">ذخیره</button>
+    </div>
+</div>
+
+<div id="fiscalYearSheet" class="sheet">
+    <div class="modal-title">بستن سال مالی</div>
+    <div id="fiscalYearStatus" class="hint-text" style="margin-bottom:12px;">در حال بارگذاری...</div>
+    <div class="form-row"><label>عنوان سال مالی (مثلاً ۱۴۰۲)</label><input id="fyLabel" type="text" dir="ltr"></div>
+    <div class="form-grid-2">
+        <div class="form-row"><label>از تاریخ</label><input id="fyStart" type="date"></div>
+        <div class="form-row"><label>تا تاریخ</label><input id="fyEnd" type="date"></div>
+    </div>
+    <div class="hint-text" style="color:#92400e;">⚠️ این عملیات غیرقابل بازگشت است: حساب‌های درآمد و هزینه این بازه بسته شده و دیگر امکان ثبت سند با تاریخ داخل این بازه وجود نخواهد داشت.</div>
+    <div class="modal-buttons">
+        <button class="modal-btn" id="closeFiscalYearBtn">بستن</button>
+        <button class="modal-btn modal-btn-primary" id="confirmCloseFiscalYearBtn">بستن سال مالی</button>
     </div>
 </div>
 
@@ -1351,6 +1368,47 @@
         } catch (e) { showToast('خطا در ارتباط با سرور', true); }
     };
 
+    /* ===================== بستن سال مالی ===================== */
+    function openFiscalYearSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('fiscalYearSheet').classList.add('active');
+        const statusEl = document.getElementById('fiscalYearStatus');
+        statusEl.textContent = 'در حال بارگذاری...';
+        fetch('/accounting/fiscal-year-status').then(r => r.json()).then(data => {
+            if (!data.success) { statusEl.textContent = msgOf(data, 'خطا'); return; }
+            if (data.last_closed_until) {
+                statusEl.textContent = `آخرین سال مالی بسته‌شده: ${data.last_fiscal_year_label} (تا تاریخ ${data.last_closed_until})`;
+                document.getElementById('fyStart').min = data.last_closed_until;
+            } else {
+                statusEl.textContent = data.first_entry_date
+                    ? `هنوز هیچ سال مالی بسته نشده. اولین سند ثبت‌شده: ${data.first_entry_date}`
+                    : 'هنوز هیچ سال مالی بسته نشده و هیچ سندی هم ثبت نشده است.';
+            }
+        }).catch(() => { statusEl.textContent = 'خطا در دریافت وضعیت.'; });
+    }
+    function closeFiscalYearSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('fiscalYearSheet').classList.remove('active');
+    }
+    document.getElementById('openFiscalYearBtn').onclick = openFiscalYearSheet;
+    document.getElementById('closeFiscalYearBtn').onclick = closeFiscalYearSheet;
+    document.getElementById('confirmCloseFiscalYearBtn').onclick = async () => {
+        const label = document.getElementById('fyLabel').value.trim();
+        const start = document.getElementById('fyStart').value;
+        const end = document.getElementById('fyEnd').value;
+        if (!label || !start || !end) { showToast('همه فیلدها را پر کنید', true); return; }
+        if (!confirm(`آیا مطمئنید می‌خواهید سال مالی ${label} (از ${start} تا ${end}) را ببندید؟ این عملیات غیرقابل بازگشت است.`)) return;
+        try {
+            const body = new URLSearchParams({ period_start: start, period_end: end, fiscal_year_label: label });
+            const res = await fetch('/accounting/close-fiscal-year', {
+                method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString()
+            });
+            const data = await res.json();
+            showToast(msgOf(data, data.success ? 'بسته شد' : 'خطا'), !data.success);
+            if (data.success) { closeFiscalYearSheet(); updateGross(); fetchAccounts(); }
+        } catch (e) { showToast('خطا در ارتباط با سرور', true); }
+    };
+
     /* ===================== پشتیبانی ===================== */
     function openSupportSheet() {
         document.getElementById('overlay').classList.add('active');
@@ -1387,7 +1445,7 @@
         }
     }).catch(() => {});
 
-    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); closeSupportSheet(); });
+    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); });
 
     checkAuthAndInit();
 </script>

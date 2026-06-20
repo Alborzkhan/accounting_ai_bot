@@ -83,12 +83,13 @@ class BaleBot:
     def handle_voice(self, chat_id: int, file_id: int, message_id: int) -> None:
         """پردازش ویس دریافتی"""
         self.send_message(chat_id, "🎤 در حال پردازش ویس شما...")
-        
+        user_id = self.auth_manager.get_user_by_bale(str(chat_id))
+
         file_path = f"voice_files/bale_{message_id}.ogg"
         if self.download_file(file_id, file_path):
             try:
                 data, transcript = self.voice_handler.voice_to_voucher(file_path)
-                
+
                 if data["type"] and data["amount"] > 0:
                     entry_id = self.engine.create_voucher(
                         date=datetime.now(),
@@ -96,7 +97,8 @@ class BaleBot:
                         lines=[
                             (data["debit_account"], data["amount"], 'debit'),
                             (data["credit_account"], data["amount"], 'credit')
-                        ]
+                        ],
+                        user_id=user_id
                     )
                     self.send_message(
                         chat_id,
@@ -165,15 +167,15 @@ class BaleBot:
             except Exception as e:
                 self.send_message(chat_id, f"❌ خطا در تولید گزارش: {str(e)}")
         else:
+            user_id = self.auth_manager.get_user_by_bale(str(chat_id))
             # ابتدا سعی می‌کنیم با موتور هوشمند پردازش کنیم
-            response = self.smart_dialog.process_message(chat_id, text)
+            response = self.smart_dialog.process_message(user_id, text)
             if "متوجه نشدم" in response:
                 # اگر موتور هوشمند نفهمید، از موتور متنی استفاده کن
-                result = self.text_handler.parse_and_create_voucher(text)
+                result = self.text_handler.parse_and_create_voucher(text, user_id=user_id)
                 self.send_message(chat_id, result["message"])
             else:
                 self.send_message(chat_id, response)
-            user_id = self.auth_manager.get_user_by_bale(str(chat_id))
             if user_id:
                 self.send_notification_if_needed(chat_id, user_id)
     
