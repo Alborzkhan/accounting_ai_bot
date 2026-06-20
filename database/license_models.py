@@ -87,3 +87,12 @@ class DiscountCode(Base):
     used_count = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class PlatformSetting(Base):
+    """تنظیمات سراسری پلتفرم (لوگوی خود اپلیکیشن، اطلاعات پشتیبانی) که فقط ادمین ویرایش می‌کند."""
+    __tablename__ = 'platform_settings'
+    id = Column(Integer, primary_key=True)
+    key = Column(String(50), unique=True, nullable=False)
+    value = Column(String(500), nullable=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

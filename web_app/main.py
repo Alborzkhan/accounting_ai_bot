@@ -28,6 +28,7 @@ from core.payment_gateway import PaymentGateway
 from core.rate_limiter import rate_limit
 from core.invoice_generator import InvoiceGenerator
 from core.inventory_reconciler import InventoryReconciler
+from core.platform_settings import PlatformSettingsManager
 from reports.invoice_pdf import InvoicePDF
 from ai_handlers.voice_to_accounting import VoiceToAccounting
 from ai_handlers.llm_processor import LLMProcessor
@@ -61,6 +62,7 @@ license_manager = LicenseManager()
 payment_gateway = PaymentGateway()
 invoice_generator = InvoiceGenerator()
 inventory_reconciler = InventoryReconciler()
+platform_settings = PlatformSettingsManager()
 invoice_pdf_maker = InvoicePDF()
 llm_processor = LLMProcessor()
 voice_handler = VoiceToAccounting(model_size="base")
@@ -77,6 +79,20 @@ def get_user_id(request: Request) -> Optional[int]:
 async def auth_me(request: Request) -> dict:
     user_id = get_user_id(request)
     return {"logged_in": bool(user_id), "user_id": user_id}
+
+
+@app.get("/platform-info")
+async def platform_info() -> dict:
+    """اطلاعات عمومی پلتفرم (لوگو، اطلاعات پشتیبانی) - بدون نیاز به ورود."""
+    settings = platform_settings.get_all()
+    logo_path = settings.get("platform_logo_path", "")
+    return {
+        "logo_url": ("/" + logo_path.replace("\\", "/")) if logo_path else "",
+        "support_technical_phone": settings.get("support_technical_phone", ""),
+        "support_technical_telegram": settings.get("support_technical_telegram", ""),
+        "support_sales_phone": settings.get("support_sales_phone", ""),
+        "support_sales_telegram": settings.get("support_sales_telegram", ""),
+    }
 
 # سرویس وضعیت لایسنس
 @app.get("/license_status")
@@ -772,6 +788,58 @@ async def admin_logs(request: Request, lines: int = 200) -> dict:
     with open(log_path, "r", encoding="utf-8", errors="replace") as f:
         all_lines = f.readlines()
     return {"success": True, "data": "".join(all_lines[-lines:])}
+
+
+@app.get("/admin/platform-settings")
+async def admin_platform_settings_get(request: Request) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    settings = platform_settings.get_all()
+    logo_path = settings.get("platform_logo_path", "")
+    settings["platform_logo_url"] = ("/" + logo_path.replace("\\", "/")) if logo_path else ""
+    return {"success": True, "data": settings}
+
+
+@app.post("/admin/platform-settings/update")
+async def admin_platform_settings_update(
+    request: Request,
+    support_technical_phone: Optional[str] = Form(None),
+    support_technical_telegram: Optional[str] = Form(None),
+    support_sales_phone: Optional[str] = Form(None),
+    support_sales_telegram: Optional[str] = Form(None),
+) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    platform_settings.update_many({
+        "support_technical_phone": support_technical_phone,
+        "support_technical_telegram": support_technical_telegram,
+        "support_sales_phone": support_sales_phone,
+        "support_sales_telegram": support_sales_telegram,
+    })
+    return {"success": True, "message": "تنظیمات پلتفرم ذخیره شد."}
+
+
+@app.post("/admin/platform-logo")
+async def admin_platform_logo(request: Request, logo: UploadFile = File(...)) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    ext = os.path.splitext(logo.filename or "")[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".svg"):
+        return {"success": False, "message": "فرمت تصویر باید png، jpg، webp یا svg باشد."}
+    logos_dir = os.path.join("static", "platform")
+    os.makedirs(logos_dir, exist_ok=True)
+    dest_path = os.path.join(logos_dir, f"logo{ext}")
+    try:
+        with open(dest_path, "wb") as buffer:
+            shutil.copyfileobj(logo.file, buffer)
+    except Exception:
+        logger.exception("admin_platform_logo upload failed")
+        return {"success": False, "message": "خطا در ذخیره لوگو."}
+    platform_settings.set("platform_logo_path", dest_path)
+    return {"success": True, "message": "لوگوی پلتفرم ذخیره شد.", "logo_url": "/" + dest_path.replace("\\", "/")}
 
 
 @app.get("/admin/license/{user_id}")

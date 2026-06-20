@@ -49,6 +49,7 @@ pre#logBox { background:#0f172a; color:#cbd5e1; padding:14px; border-radius:10px
     <button class="tab-btn" data-tab="pricingTab">قیمت‌گذاری</button>
     <button class="tab-btn" data-tab="discountsTab">کدهای تخفیف</button>
     <button class="tab-btn" data-tab="logsTab">لاگ‌ها</button>
+    <button class="tab-btn" data-tab="platformTab">پلتفرم و پشتیبانی</button>
 </div>
 
 <div id="usersTab" class="panel active">
@@ -122,6 +123,24 @@ pre#logBox { background:#0f172a; color:#cbd5e1; padding:14px; border-radius:10px
     </div>
 </div>
 
+<div id="platformTab" class="panel">
+    <div class="card">
+        <h3 style="margin-bottom:10px;">لوگوی پلتفرم (نارین)</h3>
+        <img id="platformLogoPreview" src="" alt="" style="max-height:60px; display:none; margin-bottom:10px;">
+        <input type="file" id="platformLogoInput" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+    </div>
+    <div class="card">
+        <h3 style="margin-bottom:10px;">اطلاعات پشتیبانی</h3>
+        <form class="inline-form" id="platformSettingsForm">
+            <div><label>تلفن پشتیبانی فنی</label><input id="psTechPhone" type="text" dir="ltr"></div>
+            <div><label>تلگرام پشتیبانی فنی</label><input id="psTechTelegram" type="text" dir="ltr" placeholder="@username"></div>
+            <div><label>تلفن پشتیبانی فروش</label><input id="psSalesPhone" type="text" dir="ltr"></div>
+            <div><label>تلگرام پشتیبانی فروش</label><input id="psSalesTelegram" type="text" dir="ltr" placeholder="@username"></div>
+            <button class="action" type="submit">ذخیره</button>
+        </form>
+    </div>
+</div>
+
 <a class="back-link" href="/">← بازگشت به صفحه اصلی</a>
 
 <script>
@@ -137,6 +156,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (btn.dataset.tab === 'pricingTab') loadPricing();
         if (btn.dataset.tab === 'discountsTab') loadDiscounts();
         if (btn.dataset.tab === 'logsTab') loadLogs();
+        if (btn.dataset.tab === 'platformTab') loadPlatformSettings();
     });
 });
 
@@ -265,6 +285,43 @@ async function loadLogs() {
     document.getElementById('logBox').textContent = data.data || '(لاگی موجود نیست)';
 }
 document.getElementById('refreshLogsBtn').addEventListener('click', loadLogs);
+
+async function loadPlatformSettings() {
+    const res = await fetch('/admin/platform-settings');
+    const data = await res.json();
+    if (!data.success) return;
+    const s = data.data;
+    document.getElementById('psTechPhone').value = s.support_technical_phone || '';
+    document.getElementById('psTechTelegram').value = s.support_technical_telegram || '';
+    document.getElementById('psSalesPhone').value = s.support_sales_phone || '';
+    document.getElementById('psSalesTelegram').value = s.support_sales_telegram || '';
+    const preview = document.getElementById('platformLogoPreview');
+    if (s.platform_logo_url) { preview.src = s.platform_logo_url; preview.style.display = 'block'; }
+}
+
+document.getElementById('platformLogoInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('logo', file);
+    const res = await fetch('/admin/platform-logo', { method: 'POST', body: fd });
+    const data = await res.json();
+    alert(data.message || (data.success ? 'ذخیره شد' : 'خطا'));
+    if (data.success) loadPlatformSettings();
+});
+
+document.getElementById('platformSettingsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = new URLSearchParams({
+        support_technical_phone: document.getElementById('psTechPhone').value,
+        support_technical_telegram: document.getElementById('psTechTelegram').value,
+        support_sales_phone: document.getElementById('psSalesPhone').value,
+        support_sales_telegram: document.getElementById('psSalesTelegram').value,
+    });
+    const res = await fetch('/admin/platform-settings/update', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+    const data = await res.json();
+    alert(data.message || (data.success ? 'ذخیره شد' : 'خطا'));
+});
 
 loadUsers();
 </script>

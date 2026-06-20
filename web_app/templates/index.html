@@ -98,7 +98,9 @@
             justify-content: center;
             font-size: 32px;
             box-shadow: 0 10px 24px rgba(0, 120, 140, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.5);
+            overflow: hidden;
         }
+        .brand-icon img { width: 100%; height: 100%; object-fit: cover; }
 
         .login-card h1 { font-size: 24px; font-weight: 800; margin-bottom: 2px; }
         .login-card .sub { font-size: 13px; color: var(--ink-soft); margin-bottom: 24px; }
@@ -210,8 +212,8 @@
         /* شبکه آیکون‌ها مثل صفحه هوم آیفون */
         .app-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 16px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
             margin-bottom: 28px;
         }
 
@@ -255,6 +257,7 @@
         .icon-green  { background: linear-gradient(135deg, #5ee7df, #1f9d6e); }
         .icon-gray   { background: linear-gradient(135deg, #b8c4d6, #6b7d99); }
         .icon-teal   { background: linear-gradient(135deg, #2dd4bf, #0d9488); }
+        .icon-indigo { background: linear-gradient(135deg, #818cf8, #4338ca); }
 
         .app-tile span { font-size: 11.5px; font-weight: 600; color: var(--ink); text-align: center; }
 
@@ -332,8 +335,9 @@
         .voice-control { text-align: center; margin: 15px 0; }
 
         .toast-message {
-            position: fixed; bottom: 110px; left: 20px; right: 20px;
-            padding: 13px 20px; border-radius: 50px; text-align: center; font-size: 13px; font-weight: 600;
+            position: fixed; bottom: 110px; left: 50%; transform: translateX(-50%);
+            width: max-content; max-width: 86%;
+            padding: 11px 22px; border-radius: 50px; text-align: center; font-size: 13px; font-weight: 600;
             z-index: 1500; opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
         }
         .toast-message.show { opacity: 1; animation: fadeOut 2.6s forwards; }
@@ -400,7 +404,7 @@
 <!-- ===== صفحه ورود ===== -->
 <div id="loginScreen" class="screen login-screen">
     <div class="login-card glass">
-        <div class="brand-icon">🧾</div>
+        <div class="brand-icon" id="brandIcon">🧾</div>
         <h1>نارین</h1>
         <p class="sub">حسابدار هوشمند شما</p>
 
@@ -486,6 +490,12 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
                 </div>
                 <span>پروفایل</span>
+            </div>
+            <div class="app-tile" id="supportTile">
+                <div class="app-icon icon-indigo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7v3a3 3 0 0 0 3 3h1v-7H6v-1a6 6 0 0 1 12 0v1h-3v7h1a3 3 0 0 0 3-3v-3a7 7 0 0 0-7-7z"/><path d="M9 19a3 3 0 0 0 6 0"/></svg>
+                </div>
+                <span>پشتیبانی</span>
             </div>
         </div>
 
@@ -617,6 +627,12 @@
         <a id="invoicePdfLink" href="#" target="_blank" class="modal-btn modal-btn-primary" style="display:block;text-align:center;text-decoration:none;margin-bottom:10px;">دانلود PDF فاکتور</a>
         <button class="modal-btn" id="closeInvoiceDoneBtn">بستن</button>
     </div>
+</div>
+
+<div id="supportSheet" class="sheet">
+    <div class="modal-title">پشتیبانی</div>
+    <div id="supportContent" class="profile-info">در حال بارگذاری...</div>
+    <button class="modal-btn" id="closeSupportBtn">بستن</button>
 </div>
 
 <!-- صفحه جزئیات -->
@@ -846,9 +862,9 @@
 
     async function fetchBusiness() {
         try {
-            const res = await fetch('/user_business_type');
+            const res = await fetch('/profile/me');
             const data = await res.json();
-            if (data.type) businessType = data.type;
+            if (data.success && data.profile && data.profile.business_type) businessType = data.profile.business_type;
         } catch (e) {}
         document.getElementById('businessBadge').innerText = businessType;
         await fetchAccounts();
@@ -1335,7 +1351,43 @@
         } catch (e) { showToast('خطا در ارتباط با سرور', true); }
     };
 
-    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); });
+    /* ===================== پشتیبانی ===================== */
+    function openSupportSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('supportSheet').classList.add('active');
+        const box = document.getElementById('supportContent');
+        box.textContent = 'در حال بارگذاری...';
+        fetch('/platform-info').then(r => r.json()).then(info => {
+            let html = '';
+            if (info.support_technical_phone || info.support_technical_telegram) {
+                html += '<b>🛠️ پشتیبانی فنی</b><br>';
+                if (info.support_technical_phone) html += `تلفن: <a href="tel:${info.support_technical_phone}">${info.support_technical_phone}</a><br>`;
+                if (info.support_technical_telegram) html += `تلگرام: <a href="https://t.me/${info.support_technical_telegram.replace('@','')}" target="_blank">${info.support_technical_telegram}</a><br>`;
+                html += '<br>';
+            }
+            if (info.support_sales_phone || info.support_sales_telegram) {
+                html += '<b>💼 پشتیبانی فروش</b><br>';
+                if (info.support_sales_phone) html += `تلفن: <a href="tel:${info.support_sales_phone}">${info.support_sales_phone}</a><br>`;
+                if (info.support_sales_telegram) html += `تلگرام: <a href="https://t.me/${info.support_sales_telegram.replace('@','')}" target="_blank">${info.support_sales_telegram}</a><br>`;
+            }
+            box.innerHTML = html || 'اطلاعات پشتیبانی هنوز تنظیم نشده است.';
+        }).catch(() => { box.textContent = 'خطا در دریافت اطلاعات پشتیبانی.'; });
+    }
+    function closeSupportSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('supportSheet').classList.remove('active');
+    }
+    document.getElementById('supportTile').onclick = openSupportSheet;
+    document.getElementById('closeSupportBtn').onclick = closeSupportSheet;
+
+    /* ===================== برندینگ پلتفرم (لوگوی صاحب اپ) ===================== */
+    fetch('/platform-info').then(r => r.json()).then(info => {
+        if (info.logo_url) {
+            document.getElementById('brandIcon').innerHTML = `<img src="${info.logo_url}" alt="نارین">`;
+        }
+    }).catch(() => {});
+
+    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); closeSupportSheet(); });
 
     checkAuthAndInit();
 </script>
