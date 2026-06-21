@@ -51,6 +51,7 @@ pre#logBox { background:#0f172a; color:#cbd5e1; padding:14px; border-radius:10px
     <button class="tab-btn" data-tab="discountsTab">کدهای تخفیف</button>
     <button class="tab-btn" data-tab="logsTab">لاگ‌ها</button>
     <button class="tab-btn" data-tab="platformTab">پلتفرم و پشتیبانی</button>
+    <button class="tab-btn" data-tab="aiTab">هوش مصنوعی</button>
 </div>
 
 <div id="usersTab" class="panel active">
@@ -142,6 +143,32 @@ pre#logBox { background:#0f172a; color:#cbd5e1; padding:14px; border-radius:10px
     </div>
 </div>
 
+<div id="aiTab" class="panel">
+    <div class="card">
+        <h3 style="margin-bottom:10px;">سرویس هوش مصنوعی</h3>
+        <p style="font-size:12px; color:#667; margin-bottom:12px;">
+            هوش مصنوعی فقط در محدوده حسابداری، حسابرسی و امور مالی کسب‌وکار به کاربر پاسخ می‌دهد (طبق system prompt).
+            بدون تنظیم این بخش، سیستم در حالت توسعه باقی می‌ماند (پاسخ‌های هوش مصنوعی غیرفعال یا فقط از طریق Ollama محلی).
+        </p>
+        <form class="inline-form" id="aiSettingsForm">
+            <div>
+                <label>ارائه‌دهنده</label>
+                <select id="aiProvider">
+                    <option value="">انتخاب نشده</option>
+                    <option value="openai">OpenAI (GPT)</option>
+                    <option value="anthropic">Anthropic (Claude)</option>
+                </select>
+            </div>
+            <div><label>مدل (اختیاری)</label><input id="aiModel" type="text" dir="ltr" placeholder="مثلاً gpt-4o-mini"></div>
+            <div><label>کلید API</label><input id="aiApiKey" type="password" dir="ltr" placeholder="برای تغییر، کلید جدید را وارد کنید"></div>
+            <button class="action" type="submit">ذخیره</button>
+            <button class="action secondary" type="button" id="aiTestBtn">تست اتصال</button>
+        </form>
+        <p id="aiCurrentKey" style="font-size:12px; color:#667; margin-bottom:8px;"></p>
+        <p id="aiTestResult" style="font-size:13px; font-weight:600;"></p>
+    </div>
+</div>
+
 <a class="back-link" href="/">← بازگشت به صفحه اصلی</a>
 
 <script>
@@ -158,6 +185,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (btn.dataset.tab === 'discountsTab') loadDiscounts();
         if (btn.dataset.tab === 'logsTab') loadLogs();
         if (btn.dataset.tab === 'platformTab') loadPlatformSettings();
+        if (btn.dataset.tab === 'aiTab') loadAiSettings();
     });
 });
 
@@ -322,6 +350,43 @@ document.getElementById('platformSettingsForm').addEventListener('submit', async
     const res = await fetch('/admin/platform-settings/update', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
     const data = await res.json();
     alert(data.message || (data.success ? 'ذخیره شد' : 'خطا'));
+});
+
+async function loadAiSettings() {
+    const res = await fetch('/admin/ai-settings');
+    const data = await res.json();
+    if (!data.success) return;
+    const s = data.data;
+    document.getElementById('aiProvider').value = s.ai_provider || '';
+    document.getElementById('aiModel').value = s.ai_model || '';
+    document.getElementById('aiApiKey').value = '';
+    document.getElementById('aiCurrentKey').textContent = s.ai_api_key_set
+        ? `کلید فعلی: ${s.ai_api_key_masked}`
+        : 'هنوز کلیدی تنظیم نشده است.';
+    document.getElementById('aiTestResult').textContent = '';
+}
+
+document.getElementById('aiSettingsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = new URLSearchParams({
+        ai_provider: document.getElementById('aiProvider').value,
+        ai_model: document.getElementById('aiModel').value,
+        ai_api_key: document.getElementById('aiApiKey').value,
+    });
+    const res = await fetch('/admin/ai-settings/update', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+    const data = await res.json();
+    alert(data.message || (data.success ? 'ذخیره شد' : 'خطا'));
+    if (data.success) loadAiSettings();
+});
+
+document.getElementById('aiTestBtn').addEventListener('click', async () => {
+    const resultEl = document.getElementById('aiTestResult');
+    resultEl.style.color = '#667';
+    resultEl.textContent = 'در حال تست اتصال...';
+    const res = await fetch('/admin/ai-settings/test', { method: 'POST' });
+    const data = await res.json();
+    resultEl.style.color = data.success ? '#065f46' : '#991b1b';
+    resultEl.textContent = data.message || '';
 });
 
 loadUsers();

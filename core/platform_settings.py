@@ -14,6 +14,9 @@ KNOWN_KEYS = [
     "support_technical_telegram",
     "support_sales_phone",
     "support_sales_telegram",
+    "ai_provider",
+    "ai_api_key",
+    "ai_model",
 ]
 
 

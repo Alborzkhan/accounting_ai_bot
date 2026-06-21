@@ -33,7 +33,7 @@ from core.platform_settings import PlatformSettingsManager
 from core.building_manager import BuildingManager
 from reports.invoice_pdf import InvoicePDF
 from ai_handlers.voice_to_accounting import VoiceToAccounting
-from ai_handlers.llm_processor import LLMProcessor
+from ai_handlers.llm_processor import LLMProcessor, SUPPORTED_PROVIDERS
 from database.models import ProformaInvoice, PurchaseInvoice
 from config import ALLOWED_ORIGINS
 
@@ -1062,6 +1062,60 @@ async def admin_platform_logo(request: Request, logo: UploadFile = File(...)) ->
         return {"success": False, "message": "خطا در ذخیره لوگو."}
     platform_settings.set("platform_logo_path", dest_path)
     return {"success": True, "message": "لوگوی پلتفرم ذخیره شد.", "logo_url": "/" + dest_path.replace("\\", "/")}
+
+
+def _mask_key(key: str) -> str:
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "•" * len(key)
+    return key[:4] + "•" * (len(key) - 8) + key[-4:]
+
+
+@app.get("/admin/ai-settings")
+async def admin_ai_settings_get(request: Request) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    settings = platform_settings.get_all()
+    return {
+        "success": True,
+        "data": {
+            "ai_provider": settings.get("ai_provider", ""),
+            "ai_model": settings.get("ai_model", ""),
+            "ai_api_key_masked": _mask_key(settings.get("ai_api_key", "")),
+            "ai_api_key_set": bool(settings.get("ai_api_key")),
+            "providers": SUPPORTED_PROVIDERS,
+        },
+    }
+
+
+@app.post("/admin/ai-settings/update")
+async def admin_ai_settings_update(
+    request: Request,
+    ai_provider: str = Form(...),
+    ai_model: Optional[str] = Form(None),
+    ai_api_key: Optional[str] = Form(None),
+) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    if ai_provider not in SUPPORTED_PROVIDERS and ai_provider != "":
+        return {"success": False, "message": "ارائه‌دهنده هوش مصنوعی نامعتبر است."}
+    updates = {"ai_provider": ai_provider, "ai_model": ai_model or ""}
+    if ai_api_key:
+        updates["ai_api_key"] = ai_api_key
+    platform_settings.update_many(updates)
+    return {"success": True, "message": "تنظیمات هوش مصنوعی ذخیره شد."}
+
+
+@app.post("/admin/ai-settings/test")
+async def admin_ai_settings_test(request: Request) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    fresh_processor = LLMProcessor()
+    return fresh_processor.test_connection()
 
 
 @app.get("/admin/license/{user_id}")

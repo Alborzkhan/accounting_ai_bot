@@ -141,13 +141,32 @@ INVOICE_EXTRACT_PROMPT = """تو دستیار ثبت فاکتور برای یک 
 
 OLLAMA_BASE_URL = "http://localhost:11434"
 
+SUPPORTED_PROVIDERS = {
+    "openai": {"label": "OpenAI (GPT)", "default_model": "gpt-4o-mini"},
+    "anthropic": {"label": "Anthropic (Claude)", "default_model": "claude-sonnet-4-6"},
+}
+
 
 class LLMProcessor:
     def __init__(self) -> None:
-        self.api_key = OPENAI_API_KEY
-        self.model = OPENAI_MODEL
         self.ollama_url = f"{OLLAMA_BASE_URL}/api/chat"
         self.use_ollama = self._check_ollama()
+        self._load_config()
+
+    def _load_config(self) -> None:
+        """تنظیمات پنل ادمین (دیتابیس) را تازه می‌خواند تا تغییرات بدون ری‌استارت سرور اعمال شوند؛
+        متغیرهای .env فقط fallback برای توسعه/سازگاری قدیمی‌اند."""
+        settings = {}
+        try:
+            from core.platform_settings import PlatformSettingsManager
+            settings = PlatformSettingsManager().get_all()
+        except Exception:
+            settings = {}
+
+        self.api_key = settings.get("ai_api_key") or OPENAI_API_KEY
+        self.provider = settings.get("ai_provider") or ("openai" if OPENAI_API_KEY else "")
+        self.model = settings.get("ai_model") or (OPENAI_MODEL if self.provider == "openai" else "") \
+            or SUPPORTED_PROVIDERS.get(self.provider, {}).get("default_model", "")
 
     def _check_ollama(self) -> bool:
         try:
@@ -157,20 +176,40 @@ class LLMProcessor:
         except Exception:
             return False
 
+    def _call_cloud(self, text: str, system_prompt: str) -> dict:
+        if self.provider == "anthropic":
+            return self._call_anthropic(text, system_prompt)
+        return self._call_openai(text, system_prompt)
+
     def process(self, text: str) -> dict:
-        import requests
+        self._load_config()
+        if self.api_key:
+            return self._call_cloud(text, LLM_SYSTEM_PROMPT)
         if self.use_ollama:
             return self._call_ollama(text)
-        if self.api_key:
-            return self._call_openai(text)
         return {"success": False, "error": "no_api_key"}
+
+    def test_connection(self) -> dict:
+        """برای دکمه «تست اتصال» در پنل ادمین: یک پیام نمونه می‌فرستد و وضعیت اتصال را برمی‌گرداند."""
+        if self.api_key:
+            label = SUPPORTED_PROVIDERS.get(self.provider, {}).get("label", "ارائه‌دهنده انتخابی")
+        elif self.use_ollama:
+            label = "Ollama (محلی)"
+        else:
+            return {"success": False, "message": "هیچ سرویس هوش مصنوعی تنظیم نشده است."}
+
+        result = self.process("سلام، حالت چطوره؟")
+        if result.get("error"):
+            return {"success": False, "message": f"❌ اتصال به {label} برقرار نشد: {result.get('message', result.get('error'))}"}
+        return {"success": True, "message": f"✅ اتصال به {label} با موفقیت برقرار شد."}
 
     def classify_business_type(self, description: str) -> dict:
         """تشخیص نوع کسب‌وکار از روی توضیح آزاد کاربر با استفاده از LLM."""
-        if self.use_ollama:
+        self._load_config()
+        if self.api_key:
+            result = self._call_cloud(description, BUSINESS_TYPE_PROMPT)
+        elif self.use_ollama:
             result = self._call_ollama(description, system_prompt=BUSINESS_TYPE_PROMPT)
-        elif self.api_key:
-            result = self._call_openai(description, system_prompt=BUSINESS_TYPE_PROMPT)
         else:
             return {"success": False, "message": "سرویس هوش مصنوعی در دسترس نیست. لطفاً نوع کسب‌وکار را خودتان انتخاب کنید."}
 
@@ -187,10 +226,11 @@ class LLMProcessor:
 
     def extract_invoice(self, text: str) -> dict:
         """استخراج اطلاعات فاکتور (فروش/خرید) از متن یا رونویسی صدای کاربر."""
-        if self.use_ollama:
+        self._load_config()
+        if self.api_key:
+            result = self._call_cloud(text, INVOICE_EXTRACT_PROMPT)
+        elif self.use_ollama:
             result = self._call_ollama(text, system_prompt=INVOICE_EXTRACT_PROMPT)
-        elif self.api_key:
-            result = self._call_openai(text, system_prompt=INVOICE_EXTRACT_PROMPT)
         else:
             return {"success": False, "message": "سرویس هوش مصنوعی در دسترس نیست."}
 
@@ -247,6 +287,33 @@ class LLMProcessor:
             if "choices" not in data:
                 return {"success": False, "error": "api_error", "message": f"خطای API: {data.get('error', {}).get('message', 'نامشخص')}"}
             content = data["choices"][0]["message"]["content"]
+            return self._parse_response(content)
+        except Exception as e:
+            return {"success": False, "error": "exception", "message": f"خطا: {str(e)}"}
+
+    def _call_anthropic(self, text: str, system_prompt: str = LLM_SYSTEM_PROMPT) -> dict:
+        import requests
+        try:
+            resp = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": self.model or SUPPORTED_PROVIDERS["anthropic"]["default_model"],
+                    "system": system_prompt,
+                    "messages": [{"role": "user", "content": text}],
+                    "max_tokens": 500,
+                    "temperature": 0.1
+                },
+                timeout=20
+            )
+            data = resp.json()
+            if "content" not in data:
+                return {"success": False, "error": "api_error", "message": f"خطای API: {data.get('error', {}).get('message', 'نامشخص')}"}
+            content = "".join(block.get("text", "") for block in data["content"] if block.get("type") == "text")
             return self._parse_response(content)
         except Exception as e:
             return {"success": False, "error": "exception", "message": f"خطا: {str(e)}"}
