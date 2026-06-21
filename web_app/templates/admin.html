@@ -155,8 +155,6 @@ pre#logBox { background:#0f172a; color:#cbd5e1; padding:14px; border-radius:10px
                 <label>ارائه‌دهنده</label>
                 <select id="aiProvider">
                     <option value="">انتخاب نشده</option>
-                    <option value="openai">OpenAI (GPT)</option>
-                    <option value="anthropic">Anthropic (Claude)</option>
                 </select>
             </div>
             <div><label>مدل (اختیاری)</label><input id="aiModel" type="text" dir="ltr" placeholder="مثلاً gpt-4o-mini"></div>
@@ -357,7 +355,15 @@ async function loadAiSettings() {
     const data = await res.json();
     if (!data.success) return;
     const s = data.data;
-    document.getElementById('aiProvider').value = s.ai_provider || '';
+    const select = document.getElementById('aiProvider');
+    select.innerHTML = '<option value="">انتخاب نشده</option>';
+    Object.entries(s.providers || {}).forEach(([key, info]) => {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = info.label;
+        select.appendChild(opt);
+    });
+    select.value = s.ai_provider || '';
     document.getElementById('aiModel').value = s.ai_model || '';
     document.getElementById('aiApiKey').value = '';
     document.getElementById('aiCurrentKey').textContent = s.ai_api_key_set

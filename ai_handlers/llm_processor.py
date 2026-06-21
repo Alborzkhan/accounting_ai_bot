@@ -142,8 +142,30 @@ INVOICE_EXTRACT_PROMPT = """تو دستیار ثبت فاکتور برای یک 
 OLLAMA_BASE_URL = "http://localhost:11434"
 
 SUPPORTED_PROVIDERS = {
-    "openai": {"label": "OpenAI (GPT)", "default_model": "gpt-4o-mini"},
-    "anthropic": {"label": "Anthropic (Claude)", "default_model": "claude-sonnet-4-6"},
+    "openai": {
+        "label": "OpenAI (GPT)", "kind": "openai_compatible",
+        "base_url": "https://api.openai.com/v1/chat/completions", "default_model": "gpt-4o-mini",
+    },
+    "anthropic": {
+        "label": "Anthropic (Claude)", "kind": "anthropic",
+        "default_model": "claude-sonnet-4-6",
+    },
+    "groq": {
+        "label": "Groq (رایگان و سریع)", "kind": "openai_compatible",
+        "base_url": "https://api.groq.com/openai/v1/chat/completions", "default_model": "llama-3.3-70b-versatile",
+    },
+    "deepseek": {
+        "label": "DeepSeek", "kind": "openai_compatible",
+        "base_url": "https://api.deepseek.com/chat/completions", "default_model": "deepseek-chat",
+    },
+    "openrouter": {
+        "label": "OpenRouter (چند مدل، گزینه‌های رایگان)", "kind": "openai_compatible",
+        "base_url": "https://openrouter.ai/api/v1/chat/completions", "default_model": "meta-llama/llama-3.1-8b-instruct:free",
+    },
+    "gemini": {
+        "label": "Google Gemini", "kind": "openai_compatible",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "default_model": "gemini-2.0-flash",
+    },
 }
 
 
@@ -177,9 +199,11 @@ class LLMProcessor:
             return False
 
     def _call_cloud(self, text: str, system_prompt: str) -> dict:
-        if self.provider == "anthropic":
+        provider_info = SUPPORTED_PROVIDERS.get(self.provider, SUPPORTED_PROVIDERS["openai"])
+        if provider_info.get("kind") == "anthropic":
             return self._call_anthropic(text, system_prompt)
-        return self._call_openai(text, system_prompt)
+        base_url = provider_info.get("base_url", SUPPORTED_PROVIDERS["openai"]["base_url"])
+        return self._call_openai(text, system_prompt, base_url=base_url)
 
     def process(self, text: str) -> dict:
         self._load_config()
@@ -263,11 +287,11 @@ class LLMProcessor:
             "message": result.get("message", ""),
         }
 
-    def _call_openai(self, text: str, system_prompt: str = LLM_SYSTEM_PROMPT) -> dict:
+    def _call_openai(self, text: str, system_prompt: str = LLM_SYSTEM_PROMPT, base_url: str = None) -> dict:
         import requests
         try:
             resp = requests.post(
-                "https://api.openai.com/v1/chat/completions",
+                base_url or SUPPORTED_PROVIDERS["openai"]["base_url"],
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"
