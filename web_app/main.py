@@ -7,6 +7,7 @@ import html
 import json
 import logging
 import secrets
+import jdatetime
 from types import SimpleNamespace
 from fastapi import FastAPI, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
@@ -29,6 +30,7 @@ from core.rate_limiter import rate_limit
 from core.invoice_generator import InvoiceGenerator
 from core.inventory_reconciler import InventoryReconciler
 from core.platform_settings import PlatformSettingsManager
+from core.building_manager import BuildingManager
 from reports.invoice_pdf import InvoicePDF
 from ai_handlers.voice_to_accounting import VoiceToAccounting
 from ai_handlers.llm_processor import LLMProcessor
@@ -63,10 +65,11 @@ payment_gateway = PaymentGateway()
 invoice_generator = InvoiceGenerator()
 inventory_reconciler = InventoryReconciler()
 platform_settings = PlatformSettingsManager()
+building_manager = BuildingManager()
 invoice_pdf_maker = InvoicePDF()
 llm_processor = LLMProcessor()
 voice_handler = VoiceToAccounting(model_size="base")
-ALLOWED_BUSINESS_TYPES = {"بازرگانی", "تولیدی", "خدماتی", "پیمانکاری", "سایر"}
+ALLOWED_BUSINESS_TYPES = {"بازرگانی", "تولیدی", "خدماتی", "پیمانکاری", "مدیریت آپارتمان‌ها"}
 
 
 def get_user_id(request: Request) -> Optional[int]:
@@ -74,6 +77,24 @@ def get_user_id(request: Request) -> Optional[int]:
     if token:
         return auth_manager.validate_session(token)
     return None
+
+
+def _parse_report_date(value: str, end_of_day: bool = False) -> Optional[datetime]:
+    """ورودی تاریخ گزارش را می‌پذیرد، چه شمسی (1404/04/01) و چه میلادی (2026-06-21)."""
+    if not value:
+        return None
+    value = value.strip()
+    dt = None
+    try:
+        dt = jdatetime.datetime.strptime(value, "%Y/%m/%d").togregorian()
+    except ValueError:
+        try:
+            dt = datetime.strptime(value, "%Y-%m-%d")
+        except ValueError:
+            return None
+    if end_of_day:
+        dt = dt.replace(hour=23, minute=59, second=59)
+    return dt
 
 @app.get("/auth/me")
 async def auth_me(request: Request) -> dict:
@@ -174,11 +195,13 @@ async def process_voice(request: Request, voice: UploadFile = File(...)) -> dict
 
 # تراز آزمایشی
 @app.get("/trial_balance")
-async def get_trial_balance(request: Request) -> dict:
+async def get_trial_balance(request: Request, date_from: str = "", date_to: str = "") -> dict:
     user_id = get_user_id(request)
     if not user_id:
         return {"data": []}
-    balances = engine.get_trial_balance(user_id=user_id)
+    df = _parse_report_date(date_from)
+    dt = _parse_report_date(date_to, end_of_day=True)
+    balances = engine.get_trial_balance(user_id=user_id, date_from=df, date_to=dt)
     data = []
     for row in balances:
         if row.total_debit != 0 or row.total_credit != 0:
@@ -647,14 +670,164 @@ async def invoice_list(request: Request) -> dict:
     return {"success": True, "data": invoice_generator.list_invoices(user_id)}
 
 
-# ========== REPORT ENDPOINTS ==========
-
-@app.get("/api/profit_loss")
-async def api_profit_loss(request: Request) -> dict:
+@app.get("/invoice/purchases")
+async def invoice_purchases_list(request: Request) -> dict:
     user_id = get_user_id(request)
     if not user_id:
         return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
-    return engine.get_profit_loss(user_id=user_id)
+    return {"success": True, "data": invoice_generator.list_purchase_invoices(user_id)}
+
+
+# ========== مدیریت آپارتمان‌ها (شارژ و هزینه‌های جاری ساختمان) ==========
+
+@app.get("/buildings/list")
+async def buildings_list(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    buildings = building_manager.get_all_buildings(user_id)
+    return {"success": True, "data": [{"id": b.id, "name": b.name, "address": b.address or "", "total_units": b.total_units, "charge_method": b.charge_method, "vacant_unit_weight": b.vacant_unit_weight} for b in buildings]}
+
+
+@app.post("/buildings/create")
+async def buildings_create(
+    request: Request, name: str = Form(...), address: str = Form(""), total_units: int = Form(0),
+    charge_method: str = Form("area"), vacant_unit_weight: float = Form(0.5),
+) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    return building_manager.add_building(user_id, name, address, total_units, charge_method, vacant_unit_weight)
+
+
+@app.post("/buildings/{building_id}/settings")
+async def buildings_settings_update(
+    request: Request, building_id: int, charge_method: str = Form(None), vacant_unit_weight: float = Form(None),
+) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    owned = [b.id for b in building_manager.get_all_buildings(user_id)]
+    if building_id not in owned:
+        return {"success": False, "message": "دسترسی غیرمجاز."}
+    return building_manager.update_building_settings(building_id, charge_method, vacant_unit_weight)
+
+
+@app.get("/buildings/{building_id}/units")
+async def buildings_units(request: Request, building_id: int) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    owned = [b.id for b in building_manager.get_all_buildings(user_id)]
+    if building_id not in owned:
+        return {"success": False, "message": "دسترسی غیرمجاز."}
+    units = building_manager.get_all_units(building_id)
+    return {"success": True, "data": [{"id": u.id, "unit_number": u.unit_number, "owner_name": u.owner_name or "", "owner_phone": u.owner_phone or "", "area": u.area or 0, "occupant_count": u.occupant_count or 0, "is_vacant": bool(u.is_vacant)} for u in units]}
+
+
+@app.post("/buildings/units/create")
+async def buildings_units_create(
+    request: Request, building_id: int = Form(...), unit_number: str = Form(...),
+    owner_name: str = Form(""), owner_phone: str = Form(""), area: float = Form(0),
+    occupant_count: int = Form(0), is_vacant: bool = Form(False),
+) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    owned = [b.id for b in building_manager.get_all_buildings(user_id)]
+    if building_id not in owned:
+        return {"success": False, "message": "دسترسی غیرمجاز."}
+    return building_manager.add_unit(building_id, unit_number, owner_name, owner_phone, area, occupant_count, is_vacant)
+
+
+@app.post("/buildings/expense")
+async def buildings_expense(
+    request: Request, building_id: int = Form(...), expense_type: str = Form(...),
+    amount: float = Form(...), description: str = Form(""),
+) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    owned = [b.id for b in building_manager.get_all_buildings(user_id)]
+    if building_id not in owned:
+        return {"success": False, "message": "دسترسی غیرمجاز."}
+    return building_manager.add_expense(building_id, expense_type, amount, description)
+
+
+@app.post("/buildings/issue-invoices")
+async def buildings_issue_invoices(request: Request, building_id: int = Form(...), month: str = Form(...)) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    owned = [b.id for b in building_manager.get_all_buildings(user_id)]
+    if building_id not in owned:
+        return {"success": False, "message": "دسترسی غیرمجاز."}
+    return building_manager.issue_invoices_for_month(building_id, month)
+
+
+@app.get("/buildings/{building_id}/unpaid")
+async def buildings_unpaid(request: Request, building_id: int) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    owned = [b.id for b in building_manager.get_all_buildings(user_id)]
+    if building_id not in owned:
+        return {"success": False, "message": "دسترسی غیرمجاز."}
+    invoices = building_manager.get_unpaid_invoices(building_id)
+    session = building_manager.Session()
+    try:
+        from database.building_models import BuildingUnit
+        data = []
+        for inv in invoices:
+            unit = session.query(BuildingUnit).filter(BuildingUnit.id == inv.unit_id).first()
+            data.append({"id": inv.id, "month": inv.month, "amount": inv.total_amount, "unit_number": unit.unit_number if unit else "-"})
+        return {"success": True, "data": data}
+    finally:
+        session.close()
+
+
+@app.post("/buildings/invoices/{invoice_id}/mark-paid")
+async def buildings_mark_paid(request: Request, invoice_id: int) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    owned = [b.id for b in building_manager.get_all_buildings(user_id)]
+    session = building_manager.Session()
+    try:
+        from database.building_models import BuildingInvoice, BuildingUnit
+        invoice = session.query(BuildingInvoice).filter(BuildingInvoice.id == invoice_id).first()
+        if not invoice:
+            return {"success": False, "message": "قبض یافت نشد."}
+        unit = session.query(BuildingUnit).filter(BuildingUnit.id == invoice.unit_id).first()
+        if not unit or unit.building_id not in owned:
+            return {"success": False, "message": "دسترسی غیرمجاز."}
+    finally:
+        session.close()
+    return building_manager.mark_invoice_paid(invoice_id)
+
+
+# ========== REPORT ENDPOINTS ==========
+
+@app.get("/api/profit_loss")
+async def api_profit_loss(request: Request, date_from: str = "", date_to: str = "") -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    df = _parse_report_date(date_from)
+    dt = _parse_report_date(date_to, end_of_day=True)
+    rows = engine.get_profit_loss(user_id=user_id, date_from=df, date_to=dt)
+    data = [{"code": r.code, "name": r.name, "type": r.type, "balance": r.balance} for r in rows if r.balance]
+    total_income = sum(r["balance"] for r in data if r["type"] == "income")
+    total_expense = sum(r["balance"] for r in data if r["type"] == "expense")
+    return {"success": True, "data": data, "total_income": total_income, "total_expense": total_expense, "net": total_income - total_expense}
+
+
+@app.get("/api/monthly_summary")
+async def api_monthly_summary(request: Request, months: int = 6) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    return {"success": True, "data": engine.get_monthly_summary(user_id, months=min(max(months, 1), 24))}
 
 
 @app.get("/api/balance_sheet")

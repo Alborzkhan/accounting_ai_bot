@@ -282,6 +282,28 @@ class InvoiceGenerator:
         finally:
             session.close()
 
+    def list_purchase_invoices(self, user_id: int, limit: int = 30) -> List[Dict]:
+        session = self.Session()
+        try:
+            invoices = session.query(PurchaseInvoice).filter(
+                PurchaseInvoice.user_id == user_id
+            ).order_by(PurchaseInvoice.id.desc()).limit(limit).all()
+            result = []
+            for inv in invoices:
+                vendor = session.query(Vendor).filter(Vendor.id == inv.vendor_id).first()
+                result.append({
+                    "id": inv.id,
+                    "invoice_number": inv.invoice_number,
+                    "date": inv.date.strftime("%Y-%m-%d"),
+                    "vendor_name": vendor.name if vendor else "-",
+                    "total": inv.total,
+                    "is_official": inv.is_official,
+                    "has_pdf": bool(inv.pdf_path),
+                })
+            return result
+        finally:
+            session.close()
+
     def get_invoice(self, invoice_id: int, user_id: Optional[int] = None) -> Optional[Dict]:
         session = self.Session()
         try:

@@ -13,6 +13,10 @@ class Building(Base):
     total_units = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.now)
     user_id = Column(Integer)  # صاحب ساختمان/مدیر
+    # روش محاسبه شارژ: area (بر اساس متراژ) | equal (به نسبت مساوی هر واحد) | occupants (بر اساس تعداد نفرات)
+    charge_method = Column(String(20), default='area')
+    # نسبت شارژ واحد خالی نسبت به واحد ساکن‌نشین (مثلاً 0.5 یعنی نصف). فقط برای روش‌های equal و occupants کاربرد دارد
+    vacant_unit_weight = Column(Float, default=0.5)
 
 class BuildingUnit(Base):
     __tablename__ = 'building_units'
@@ -22,6 +26,8 @@ class BuildingUnit(Base):
     owner_name = Column(String(100))
     owner_phone = Column(String(20))
     area = Column(Float)  # متراژ واحد
+    occupant_count = Column(Integer, default=0)  # تعداد نفرات ساکن
+    is_vacant = Column(Boolean, default=False)  # آیا واحد خالی (بدون ساکن) است
     created_at = Column(DateTime, default=datetime.now)
 
 class BuildingExpense(Base):

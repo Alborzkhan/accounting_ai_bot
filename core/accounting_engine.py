@@ -5,7 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import re
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import func
+from sqlalchemy import func, case
 from database.models import init_db, Account, JournalEntry, JournalLine, Customer, Vendor, BusinessType, FiscalYearClosing
 from datetime import datetime
 from typing import Any, List, Tuple, Dict, Optional
@@ -248,7 +248,8 @@ class AccountingEngine:
         finally:
             session.close()
 
-    def get_trial_balance(self, business_type: Optional[str] = None, user_id: Optional[int] = None) -> List[Any]:
+    def get_trial_balance(self, business_type: Optional[str] = None, user_id: Optional[int] = None,
+                           date_from: Optional[datetime] = None, date_to: Optional[datetime] = None) -> List[Any]:
         session = self.Session()
         try:
             debit_conditions = [JournalLine.side == 'debit']
@@ -256,6 +257,12 @@ class AccountingEngine:
             if user_id is not None:
                 debit_conditions.append(JournalEntry.user_id == user_id)
                 credit_conditions.append(JournalEntry.user_id == user_id)
+            if date_from is not None:
+                debit_conditions.append(JournalEntry.date >= date_from)
+                credit_conditions.append(JournalEntry.date >= date_from)
+            if date_to is not None:
+                debit_conditions.append(JournalEntry.date <= date_to)
+                credit_conditions.append(JournalEntry.date <= date_to)
 
             query = session.query(
                 Account.code,
@@ -281,7 +288,41 @@ class AccountingEngine:
         finally:
             session.close()
 
-    def get_profit_loss(self, business_type: Optional[str] = None, user_id: Optional[int] = None) -> List[Any]:
+    def get_monthly_summary(self, user_id: int, months: int = 6) -> List[Dict]:
+        """روند درآمد/هزینه ماهانه برای N ماه اخیر - برای نمایش نموداری در گزارش‌ها."""
+        from sqlalchemy import func as sa_func
+        session = self.Session()
+        try:
+            month_expr = sa_func.strftime('%Y-%m', JournalEntry.date)
+            rows = session.query(
+                month_expr.label('month'),
+                Account.type,
+                func.coalesce(func.sum(JournalLine.amount).filter(JournalLine.side == 'credit'), 0).label('total_credit'),
+                func.coalesce(func.sum(JournalLine.amount).filter(JournalLine.side == 'debit'), 0).label('total_debit'),
+            ).select_from(JournalLine).join(
+                JournalEntry, JournalEntry.id == JournalLine.entry_id
+            ).join(
+                Account, Account.id == JournalLine.account_id
+            ).filter(
+                JournalEntry.user_id == user_id,
+                Account.type.in_(['income', 'expense']),
+            ).group_by('month', Account.type).order_by('month').all()
+
+            summary: Dict[str, Dict[str, float]] = {}
+            for r in rows:
+                bucket = summary.setdefault(r.month, {"income": 0.0, "expense": 0.0})
+                if r.type == 'income':
+                    bucket["income"] += (r.total_credit - r.total_debit)
+                else:
+                    bucket["expense"] += (r.total_debit - r.total_credit)
+
+            sorted_months = sorted(summary.keys())[-months:]
+            return [{"month": m, "income": summary[m]["income"], "expense": summary[m]["expense"]} for m in sorted_months]
+        finally:
+            session.close()
+
+    def get_profit_loss(self, business_type: Optional[str] = None, user_id: Optional[int] = None,
+                         date_from: Optional[datetime] = None, date_to: Optional[datetime] = None) -> List[Any]:
         """گزارش سود و زیان - برگشت حساب‌های درآمد و هزینه با مانده"""
         session = self.Session()
         try:
@@ -290,15 +331,26 @@ class AccountingEngine:
             if user_id is not None:
                 credit_conditions.append(JournalEntry.user_id == user_id)
                 debit_conditions.append(JournalEntry.user_id == user_id)
+            if date_from is not None:
+                credit_conditions.append(JournalEntry.date >= date_from)
+                debit_conditions.append(JournalEntry.date >= date_from)
+            if date_to is not None:
+                credit_conditions.append(JournalEntry.date <= date_to)
+                debit_conditions.append(JournalEntry.date <= date_to)
+
+            credit_sum = func.coalesce(func.sum(JournalLine.amount).filter(*credit_conditions), 0)
+            debit_sum = func.coalesce(func.sum(JournalLine.amount).filter(*debit_conditions), 0)
+            # درآمد: مانده طبیعی بستانکار (بستانکار-بدهکار) | هزینه: مانده طبیعی بدهکار (بدهکار-بستانکار)
+            balance_expr = case(
+                (Account.type == 'income', credit_sum - debit_sum),
+                else_=(debit_sum - credit_sum)
+            ).label('balance')
 
             query = session.query(
                 Account.code,
                 Account.name,
                 Account.type,
-                (
-                    func.coalesce(func.sum(JournalLine.amount).filter(*credit_conditions), 0) -
-                    func.coalesce(func.sum(JournalLine.amount).filter(*debit_conditions), 0)
-                ).label('balance')
+                balance_expr
             ).outerjoin(JournalLine, JournalLine.account_id == Account.id
             ).outerjoin(JournalEntry, JournalEntry.id == JournalLine.entry_id
             ).filter(Account.type.in_(['income', 'expense'])

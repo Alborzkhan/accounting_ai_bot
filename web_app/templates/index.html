@@ -485,6 +485,12 @@
                 </div>
                 <span>تنظیمات</span>
             </div>
+            <div class="app-tile" id="reportsTile">
+                <div class="app-icon icon-green">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16M9 19v-6M14 19V9M19 19v-4"/></svg>
+                </div>
+                <span>گزارشات</span>
+            </div>
             <div class="app-tile" id="profileTile">
                 <div class="app-icon icon-orange">
                     <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
@@ -550,9 +556,10 @@
             <option value="تولیدی">تولیدی</option>
             <option value="خدماتی">خدماتی</option>
             <option value="پیمانکاری">پیمانکاری</option>
-            <option value="سایر">سایر</option>
+            <option value="مدیریت آپارتمان‌ها">مدیریت آپارتمان‌ها (دریافت شارژ ساختمان)</option>
         </select>
     </div>
+    <button class="modal-btn" type="button" id="openBuildingFromSettingsBtn" style="display:none; margin-bottom:14px;">🏢 ورود به مدیریت ساختمان</button>
     <div class="hint-text">نمی‌دانید کدام مناسب کسب‌وکار شماست؟ توضیح بدهید تا هوش مصنوعی پیشنهاد بدهد:</div>
     <div class="form-row">
         <textarea id="businessDescInput" rows="2" placeholder="مثلاً: یک کافه کوچک دارم که قهوه و کیک می‌فروشم"></textarea>
@@ -650,6 +657,116 @@
     <div class="modal-title">پشتیبانی</div>
     <div id="supportContent" class="profile-info">در حال بارگذاری...</div>
     <button class="modal-btn" id="closeSupportBtn">بستن</button>
+</div>
+
+<div id="reportsSheet" class="sheet" style="max-width:480px;">
+    <div class="modal-title">گزارشات</div>
+
+    <div class="form-row">
+        <label>نوع گزارش</label>
+        <select id="reportType">
+            <option value="trial_balance">تراز آزمایشی</option>
+            <option value="profit_loss">سود و زیان</option>
+            <option value="balance_sheet">ترازنامه</option>
+            <option value="journal">دفتر روزنامه (اسناد)</option>
+            <option value="sales_invoices">فاکتورهای فروش</option>
+            <option value="purchase_invoices">فاکتورهای خرید</option>
+        </select>
+    </div>
+    <div class="form-grid-2">
+        <input id="reportDateFrom" type="text" dir="ltr" placeholder="از تاریخ (مثلاً 1404/01/01)">
+        <input id="reportDateTo" type="text" dir="ltr" placeholder="تا تاریخ (مثلاً 1404/04/01)">
+    </div>
+    <div class="hint-text">تاریخ‌ها به‌صورت شمسی وارد شوند (سال/ماه/روز). در صورت خالی‌بودن، کل بازه نمایش داده می‌شود.</div>
+    <button class="modal-btn modal-btn-primary" type="button" id="runReportBtn" style="margin-bottom:14px;">نمایش گزارش</button>
+
+    <div id="reportSummary" class="hint-text" style="margin-bottom:10px; font-weight:600;"></div>
+    <div class="chart-container">
+        <canvas id="reportChartCanvas"></canvas>
+    </div>
+    <div id="reportTable" class="sub-detail-list"></div>
+
+    <div class="section-header"><h3 style="font-size:14px;">روند ۶ ماه اخیر</h3></div>
+    <div class="chart-container" style="margin-bottom:10px;">
+        <canvas id="trendChartCanvas"></canvas>
+    </div>
+
+    <div class="modal-buttons">
+        <button class="modal-btn" id="closeReportsBtn">بستن</button>
+    </div>
+</div>
+
+<div id="buildingSheet" class="sheet">
+    <div class="modal-title">مدیریت ساختمان</div>
+
+    <div class="form-row">
+        <label>مجتمع</label>
+        <select id="buildingSelect"><option value="">یک مجتمع انتخاب کنید...</option></select>
+    </div>
+    <div class="form-row"><input id="newBuildingName" type="text" placeholder="نام مجتمع جدید"></div>
+    <div class="form-grid-2">
+        <select id="newBuildingChargeMethod">
+            <option value="area">تقسیم بر اساس متراژ</option>
+            <option value="equal">تقسیم به‌نسبت مساوی هر واحد</option>
+            <option value="occupants">تقسیم بر اساس تعداد نفرات</option>
+        </select>
+        <input id="newBuildingVacantWeight" type="number" step="0.1" value="0.5" placeholder="نسبت واحد خالی (مثلاً 0.5)">
+    </div>
+    <button class="modal-btn" type="button" id="addBuildingBtn" style="margin-bottom:14px;">+ ثبت مجتمع</button>
+
+    <div id="buildingDetail" style="display:none; margin-top:14px;">
+        <div class="form-grid-2" style="margin-bottom:10px;">
+            <select id="editChargeMethod">
+                <option value="area">تقسیم بر اساس متراژ</option>
+                <option value="equal">تقسیم به‌نسبت مساوی هر واحد</option>
+                <option value="occupants">تقسیم بر اساس تعداد نفرات</option>
+            </select>
+            <button class="modal-btn" type="button" id="saveChargeMethodBtn">ذخیره روش تقسیم</button>
+        </div>
+
+        <label class="field-label">واحدها</label>
+        <div id="unitsList" class="hint-text">در حال بارگذاری...</div>
+        <div class="invoice-line" style="grid-template-columns: 1fr 1fr 1fr;">
+            <input id="newUnitNumber" placeholder="شماره واحد">
+            <input id="newUnitOwner" placeholder="نام مالک">
+            <input id="newUnitPhone" placeholder="موبایل مالک" dir="ltr">
+        </div>
+        <div class="invoice-line" style="grid-template-columns: 1fr 1fr 1fr;">
+            <input id="newUnitArea" type="number" placeholder="متراژ">
+            <input id="newUnitOccupants" type="number" placeholder="تعداد نفرات ساکن">
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px;"><input id="newUnitVacant" type="checkbox" style="width:auto;"> واحد خالی است</label>
+        </div>
+        <button class="modal-btn" type="button" id="addUnitBtn" style="margin-bottom:14px;">+ ثبت واحد</button>
+
+        <label class="field-label">ثبت هزینه جاری ساختمان</label>
+        <div class="form-grid-2">
+            <select id="expenseType">
+                <option value="برق مشاعات">برق مشاعات</option>
+                <option value="آب مشاعات">آب مشاعات</option>
+                <option value="گاز مشاعات">گاز مشاعات</option>
+                <option value="نظافت">نظافت</option>
+                <option value="آسانسور">آسانسور</option>
+                <option value="موتورخانه">موتورخانه</option>
+                <option value="سایر">سایر</option>
+            </select>
+            <input id="expenseAmount" type="number" placeholder="مبلغ (تومان)">
+        </div>
+        <button class="modal-btn" type="button" id="addExpenseBtn" style="margin-bottom:14px;">+ ثبت هزینه</button>
+
+        <label class="field-label">صدور شارژ ماهانه</label>
+        <div class="form-grid-2">
+            <input id="chargeMonth" type="text" placeholder="مثلاً 1404/04">
+            <button class="modal-btn" type="button" id="issueChargesBtn">صدور قبض برای همه واحدها</button>
+        </div>
+        <p id="buildingMsg" class="hint-text" style="margin:10px 0;"></p>
+
+        <label class="field-label">قبض‌های پرداخت‌نشده</label>
+        <div id="unpaidList" class="hint-text">—</div>
+    </div>
+
+    <div class="modal-buttons">
+        <button class="modal-btn" id="closeBuildingBtn">بستن</button>
+    </div>
 </div>
 
 <!-- صفحه جزئیات -->
@@ -869,11 +986,36 @@
     let mainCategories = [];
     const catMap = {
         "بازرگانی": [
-            { name: "درآمدها", accountCodes: ["6001", "6002"], emoji: "📈" },
-            { name: "هزینه‌ها", accountCodes: ["7001", "7002", "7003", "7005", "7006"], emoji: "📉" },
-            { name: "محصولات", accountCodes: ["1201", "1202"], emoji: "📦" },
+            { name: "درآمدها", accountCodes: ["4001", "4601"], emoji: "📈" },
+            { name: "هزینه‌ها", accountCodes: ["5101", "5102", "5601", "5602", "5603", "5604", "5605", "5606", "5607", "5608", "5609", "5610"], emoji: "📉" },
+            { name: "موجودی کالا", accountCodes: ["1201"], emoji: "📦" },
             { name: "بدهکاران", accountCodes: ["1101"], emoji: "👥" },
-            { name: "بستانکاران", accountCodes: ["3001"], emoji: "🤝" }
+            { name: "بستانکاران", accountCodes: ["2001"], emoji: "🤝" }
+        ],
+        "تولیدی": [
+            { name: "درآمدها", accountCodes: ["4201", "4601"], emoji: "📈" },
+            { name: "هزینه‌ها", accountCodes: ["5201", "5601", "5602", "5603", "5604", "5605", "5606", "5607", "5608", "5609", "5610"], emoji: "📉" },
+            { name: "مواد و تجهیزات", accountCodes: ["1301", "1302", "1303"], emoji: "🏭" },
+            { name: "بدهکاران", accountCodes: ["1101"], emoji: "👥" },
+            { name: "بستانکاران", accountCodes: ["2001"], emoji: "🤝" }
+        ],
+        "خدماتی": [
+            { name: "درآمدها", accountCodes: ["4301", "4601"], emoji: "📈" },
+            { name: "هزینه‌ها", accountCodes: ["5301", "5601", "5602", "5603", "5604", "5605", "5606", "5607", "5608", "5609", "5610"], emoji: "📉" },
+            { name: "بدهکاران", accountCodes: ["1102"], emoji: "👥" },
+            { name: "بستانکاران", accountCodes: ["2001"], emoji: "🤝" }
+        ],
+        "پیمانکاری": [
+            { name: "درآمدها", accountCodes: ["4401", "4601"], emoji: "📈" },
+            { name: "هزینه‌ها", accountCodes: ["5401", "5601", "5602", "5603", "5604", "5605", "5606", "5607", "5608", "5609", "5610"], emoji: "📉" },
+            { name: "پروژه‌ها", accountCodes: ["1304"], emoji: "🏗️" },
+            { name: "بدهکاران پروژه", accountCodes: ["1103"], emoji: "👥" },
+            { name: "بستانکاران", accountCodes: ["2002"], emoji: "🤝" }
+        ],
+        "مدیریت آپارتمان‌ها": [
+            { name: "درآمد شارژ", accountCodes: ["4501", "4601"], emoji: "📈" },
+            { name: "هزینه‌های جاری ساختمان", accountCodes: ["5501", "5502", "5503", "5504", "5505", "5506", "5507"], emoji: "🏢" },
+            { name: "بدهکاران شارژ واحدها", accountCodes: ["1601"], emoji: "👥" }
         ]
     };
 
@@ -1115,6 +1257,10 @@
         document.getElementById('overlay').classList.remove('active');
         document.getElementById('settingsSheet').classList.remove('active');
     }
+    function updateBuildingSettingsButton() {
+        const isBuilding = document.getElementById('businessTypeSelect').value === 'مدیریت آپارتمان‌ها';
+        document.getElementById('openBuildingFromSettingsBtn').style.display = isBuilding ? 'block' : 'none';
+    }
     async function loadProfileIntoSettings() {
         try {
             const res = await fetch('/profile/me');
@@ -1129,11 +1275,17 @@
                 document.getElementById('settingsEconomicCode').value = p.economic_code || '';
                 document.getElementById('settingsNationalId').value = p.national_id || '';
                 document.getElementById('settingsRegNumber').value = p.company_registration_number || '';
+                updateBuildingSettingsButton();
             }
         } catch (e) {}
     }
     document.getElementById('settingsTile').onclick = openSettingsSheet;
     document.getElementById('closeSettingsBtn').onclick = closeSettingsSheet;
+    document.getElementById('businessTypeSelect').addEventListener('change', updateBuildingSettingsButton);
+    document.getElementById('openBuildingFromSettingsBtn').onclick = () => {
+        closeSettingsSheet();
+        openBuildingSheet();
+    };
 
     document.getElementById('classifyBusinessBtn').onclick = async () => {
         const desc = document.getElementById('businessDescInput').value.trim();
@@ -1149,6 +1301,7 @@
             const data = await res.json();
             if (data.success) {
                 document.getElementById('businessTypeSelect').value = data.business_type;
+                updateBuildingSettingsButton();
                 resultEl.textContent = `✅ پیشنهاد: ${data.business_type}${data.reasoning ? ' — ' + data.reasoning : ''}`;
             } else {
                 resultEl.textContent = msgOf(data, 'تشخیص ممکن نشد، لطفاً خودتان انتخاب کنید.');
@@ -1445,7 +1598,271 @@
         }
     }).catch(() => {});
 
-    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); });
+    /* ===================== گزارشات ===================== */
+    let reportChart = null;
+    let trendChart = null;
+
+    function openReportsSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('reportsSheet').classList.add('active');
+        runReport();
+        loadTrendChart();
+    }
+    function closeReportsSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('reportsSheet').classList.remove('active');
+    }
+    document.getElementById('reportsTile').onclick = openReportsSheet;
+    document.getElementById('closeReportsBtn').onclick = closeReportsSheet;
+    document.getElementById('runReportBtn').onclick = runReport;
+    document.getElementById('reportType').onchange = runReport;
+
+    function renderReportChart(type, labels, datasets) {
+        const ctx = document.getElementById('reportChartCanvas').getContext('2d');
+        if (reportChart) reportChart.destroy();
+        reportChart = new Chart(ctx, { type, data: { labels, datasets }, options: { responsive: true, plugins: { legend: { position: 'top' } } } });
+    }
+
+    async function runReport() {
+        const type = document.getElementById('reportType').value;
+        const from = document.getElementById('reportDateFrom').value;
+        const to = document.getElementById('reportDateTo').value;
+        const qs = new URLSearchParams();
+        if (from) qs.set('date_from', from);
+        if (to) qs.set('date_to', to);
+
+        const table = document.getElementById('reportTable');
+        const summary = document.getElementById('reportSummary');
+        table.innerHTML = 'در حال بارگذاری...';
+        summary.textContent = '';
+
+        try {
+            if (type === 'trial_balance') {
+                const res = await fetch('/trial_balance?' + qs.toString());
+                const data = (await res.json()).data || [];
+                table.innerHTML = data.length
+                    ? data.map(r => `<div class="sub-detail-item"><span>${r.name} (${r.code})</span><span>بد: ${r.debit.toLocaleString()} | بس: ${r.credit.toLocaleString()}</span></div>`).join('')
+                    : 'داده‌ای یافت نشد.';
+                renderReportChart('bar', data.map(r => r.name), [
+                    { label: 'بدهکار', data: data.map(r => r.debit), backgroundColor: '#F97316' },
+                    { label: 'بستانکار', data: data.map(r => r.credit), backgroundColor: '#3B82F6' },
+                ]);
+            } else if (type === 'profit_loss') {
+                const res = await fetch('/api/profit_loss?' + qs.toString());
+                const json = await res.json();
+                const data = json.data || [];
+                summary.textContent = `درآمد: ${(json.total_income || 0).toLocaleString()} | هزینه: ${(json.total_expense || 0).toLocaleString()} | سود/زیان خالص: ${(json.net || 0).toLocaleString()} تومان`;
+                table.innerHTML = data.length
+                    ? data.map(r => `<div class="sub-detail-item"><span>${r.name}</span><span>${r.balance.toLocaleString()}</span></div>`).join('')
+                    : 'داده‌ای یافت نشد.';
+                renderReportChart('pie', ['درآمد', 'هزینه'], [{ data: [json.total_income || 0, json.total_expense || 0], backgroundColor: ['#1f9d6e', '#d24545'] }]);
+            } else if (type === 'balance_sheet') {
+                const res = await fetch('/api/balance_sheet');
+                const json = await res.json();
+                summary.textContent = `دارایی: ${(json.total_assets || 0).toLocaleString()} | بدهی: ${(json.total_liabilities || 0).toLocaleString()} | سرمایه: ${(json.total_equity || 0).toLocaleString()}`;
+                const rows = [
+                    ...(json.assets || []).map(r => ({ ...r, group: 'دارایی' })),
+                    ...(json.liabilities || []).map(r => ({ ...r, group: 'بدهی' })),
+                    ...(json.equity || []).map(r => ({ ...r, group: 'سرمایه' })),
+                ];
+                table.innerHTML = rows.length
+                    ? rows.map(r => `<div class="sub-detail-item"><span>${r.name} (${r.group})</span><span>${r.balance.toLocaleString()}</span></div>`).join('')
+                    : 'داده‌ای یافت نشد.';
+                renderReportChart('bar', ['دارایی', 'بدهی', 'سرمایه'], [{ data: [json.total_assets || 0, json.total_liabilities || 0, json.total_equity || 0], backgroundColor: ['#4facfe', '#d24545', '#a18cd1'] }]);
+            } else if (type === 'journal') {
+                const res = await fetch('/api/journal?limit=50');
+                const json = await res.json();
+                const entries = json.data || [];
+                summary.textContent = `تعداد اسناد: ${entries.length}`;
+                table.innerHTML = entries.length
+                    ? entries.map(e => `<div class="sub-detail-item"><span>سند ${e.id} - ${e.description || ''}</span><span>${(e.date || '').toString().slice(0, 10)}</span></div>`).join('')
+                    : 'سندی یافت نشد.';
+                renderReportChart('bar', entries.slice(0, 10).map(e => 'سند ' + e.id), [{ label: 'تعداد ردیف', data: entries.slice(0, 10).map(e => (e.lines || []).length), backgroundColor: '#4facfe' }]);
+            } else if (type === 'sales_invoices') {
+                const res = await fetch('/invoice/list');
+                const json = await res.json();
+                const invs = json.data || [];
+                const totalSum = invs.reduce((s, i) => s + (i.total || 0), 0);
+                summary.textContent = `تعداد فاکتور: ${invs.length} | جمع فروش: ${totalSum.toLocaleString()} تومان`;
+                table.innerHTML = invs.length
+                    ? invs.map(i => `<div class="sub-detail-item"><span>${i.invoice_number} - ${i.customer_name}</span><span>${i.total.toLocaleString()} ت</span></div>`).join('')
+                    : 'فاکتوری یافت نشد.';
+                renderReportChart('bar', invs.slice(0, 10).map(i => i.invoice_number), [{ label: 'مبلغ', data: invs.slice(0, 10).map(i => i.total), backgroundColor: '#1f9d6e' }]);
+            } else if (type === 'purchase_invoices') {
+                const res = await fetch('/invoice/purchases');
+                const json = await res.json();
+                const invs = json.data || [];
+                const totalSum = invs.reduce((s, i) => s + (i.total || 0), 0);
+                summary.textContent = `تعداد فاکتور: ${invs.length} | جمع خرید: ${totalSum.toLocaleString()} تومان`;
+                table.innerHTML = invs.length
+                    ? invs.map(i => `<div class="sub-detail-item"><span>${i.invoice_number} - ${i.vendor_name}</span><span>${i.total.toLocaleString()} ت</span></div>`).join('')
+                    : 'فاکتوری یافت نشد.';
+                renderReportChart('bar', invs.slice(0, 10).map(i => i.invoice_number), [{ label: 'مبلغ', data: invs.slice(0, 10).map(i => i.total), backgroundColor: '#d24545' }]);
+            }
+        } catch (e) {
+            table.innerHTML = 'خطا در دریافت گزارش.';
+        }
+    }
+
+    async function loadTrendChart() {
+        try {
+            const res = await fetch('/api/monthly_summary?months=6');
+            const json = await res.json();
+            const rows = json.data || [];
+            const ctx = document.getElementById('trendChartCanvas').getContext('2d');
+            if (trendChart) trendChart.destroy();
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: rows.map(r => r.month),
+                    datasets: [
+                        { label: 'درآمد', data: rows.map(r => r.income), borderColor: '#1f9d6e', backgroundColor: 'rgba(31,157,110,0.15)', fill: true, tension: 0.3 },
+                        { label: 'هزینه', data: rows.map(r => r.expense), borderColor: '#d24545', backgroundColor: 'rgba(210,69,69,0.15)', fill: true, tension: 0.3 },
+                    ]
+                },
+                options: { responsive: true, plugins: { legend: { position: 'top' } } }
+            });
+        } catch (e) {}
+    }
+
+    /* ===================== مدیریت ساختمان ===================== */
+    let currentBuildingId = null;
+
+    function openBuildingSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('buildingSheet').classList.add('active');
+        loadBuildingsList();
+    }
+    function closeBuildingSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('buildingSheet').classList.remove('active');
+    }
+    document.getElementById('closeBuildingBtn').onclick = closeBuildingSheet;
+
+    let buildingsCache = [];
+    async function loadBuildingsList() {
+        const res = await fetch('/buildings/list');
+        const data = await res.json();
+        buildingsCache = data.data || [];
+        const sel = document.getElementById('buildingSelect');
+        sel.innerHTML = '<option value="">یک مجتمع انتخاب کنید...</option>' +
+            buildingsCache.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+        document.getElementById('buildingDetail').style.display = 'none';
+        currentBuildingId = null;
+    }
+
+    document.getElementById('addBuildingBtn').onclick = async () => {
+        const name = document.getElementById('newBuildingName').value.trim();
+        if (!name) { showToast('نام مجتمع را وارد کنید', true); return; }
+        const body = new URLSearchParams({
+            name: name,
+            charge_method: document.getElementById('newBuildingChargeMethod').value,
+            vacant_unit_weight: document.getElementById('newBuildingVacantWeight').value || 0.5,
+        });
+        const res = await fetch('/buildings/create', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+        const data = await res.json();
+        showToast(msgOf(data, data.success ? 'ثبت شد' : 'خطا'), !data.success);
+        if (data.success) { document.getElementById('newBuildingName').value = ''; loadBuildingsList(); }
+    };
+
+    document.getElementById('buildingSelect').onchange = async (e) => {
+        currentBuildingId = e.target.value;
+        if (!currentBuildingId) { document.getElementById('buildingDetail').style.display = 'none'; return; }
+        document.getElementById('buildingDetail').style.display = 'block';
+        const b = buildingsCache.find(x => String(x.id) === String(currentBuildingId));
+        if (b) document.getElementById('editChargeMethod').value = b.charge_method || 'area';
+        await loadUnits();
+        await loadUnpaid();
+    };
+
+    document.getElementById('saveChargeMethodBtn').onclick = async () => {
+        if (!currentBuildingId) return;
+        const body = new URLSearchParams({ charge_method: document.getElementById('editChargeMethod').value });
+        const res = await fetch(`/buildings/${currentBuildingId}/settings`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+        const data = await res.json();
+        showToast(msgOf(data, data.success ? 'ذخیره شد' : 'خطا'), !data.success);
+        if (data.success) loadBuildingsList();
+    };
+
+    async function loadUnits() {
+        const box = document.getElementById('unitsList');
+        box.textContent = 'در حال بارگذاری...';
+        const res = await fetch(`/buildings/${currentBuildingId}/units`);
+        const data = await res.json();
+        const units = data.data || [];
+        box.innerHTML = units.length
+            ? units.map(u => `<div class="sub-detail-item"><span>واحد ${u.unit_number} - ${u.owner_name || '-'}${u.is_vacant ? ' (خالی)' : ''}</span><span>${u.area || 0} متر / ${u.occupant_count || 0} نفر</span></div>`).join('')
+            : 'هنوز واحدی ثبت نشده.';
+    }
+
+    document.getElementById('addUnitBtn').onclick = async () => {
+        if (!currentBuildingId) return;
+        const body = new URLSearchParams({
+            building_id: currentBuildingId,
+            unit_number: document.getElementById('newUnitNumber').value.trim(),
+            owner_name: document.getElementById('newUnitOwner').value.trim(),
+            owner_phone: document.getElementById('newUnitPhone').value.trim(),
+            area: document.getElementById('newUnitArea').value || 0,
+            occupant_count: document.getElementById('newUnitOccupants').value || 0,
+            is_vacant: document.getElementById('newUnitVacant').checked,
+        });
+        if (!body.get('unit_number')) { showToast('شماره واحد را وارد کنید', true); return; }
+        const res = await fetch('/buildings/units/create', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+        const data = await res.json();
+        showToast(msgOf(data, data.success ? 'ثبت شد' : 'خطا'), !data.success);
+        if (data.success) {
+            ['newUnitNumber', 'newUnitOwner', 'newUnitPhone', 'newUnitArea', 'newUnitOccupants'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('newUnitVacant').checked = false;
+            loadUnits();
+        }
+    };
+
+    document.getElementById('addExpenseBtn').onclick = async () => {
+        if (!currentBuildingId) return;
+        const amount = document.getElementById('expenseAmount').value;
+        if (!amount || parseFloat(amount) <= 0) { showToast('مبلغ هزینه را وارد کنید', true); return; }
+        const body = new URLSearchParams({
+            building_id: currentBuildingId,
+            expense_type: document.getElementById('expenseType').value,
+            amount: amount,
+        });
+        const res = await fetch('/buildings/expense', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+        const data = await res.json();
+        showToast(msgOf(data, data.success ? 'ثبت شد' : 'خطا'), !data.success);
+        if (data.success) document.getElementById('expenseAmount').value = '';
+    };
+
+    document.getElementById('issueChargesBtn').onclick = async () => {
+        if (!currentBuildingId) return;
+        const month = document.getElementById('chargeMonth').value.trim();
+        if (!month) { showToast('ماه را وارد کنید (مثلاً 1404/04)', true); return; }
+        const body = new URLSearchParams({ building_id: currentBuildingId, month });
+        const res = await fetch('/buildings/issue-invoices', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+        const data = await res.json();
+        document.getElementById('buildingMsg').textContent = msgOf(data, data.success ? 'صادر شد' : 'خطا');
+        if (data.success) loadUnpaid();
+    };
+
+    async function loadUnpaid() {
+        const box = document.getElementById('unpaidList');
+        box.textContent = 'در حال بارگذاری...';
+        const res = await fetch(`/buildings/${currentBuildingId}/unpaid`);
+        const data = await res.json();
+        const items = data.data || [];
+        box.innerHTML = items.length
+            ? items.map(i => `<div class="sub-detail-item"><span>واحد ${i.unit_number} - ${i.month}</span><span>${i.amount.toLocaleString()} ت <button class="line-remove" style="color:#1f9d6e;font-size:13px;" data-id="${i.id}">✓ پرداخت شد</button></span></div>`).join('')
+            : 'قبض پرداخت‌نشده‌ای موجود نیست.';
+        box.querySelectorAll('button[data-id]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const res2 = await fetch(`/buildings/invoices/${btn.dataset.id}/mark-paid`, { method: 'POST' });
+                const data2 = await res2.json();
+                showToast(msgOf(data2, data2.success ? 'تسویه شد' : 'خطا'), !data2.success);
+                if (data2.success) loadUnpaid();
+            });
+        });
+    }
+
+    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet(); });
 
     checkAuthAndInit();
 </script>
