@@ -107,8 +107,8 @@ pre#logBox { background:#0f172a; color:#cbd5e1; padding:14px; border-radius:10px
                     <option value="annual">سالانه</option>
                 </select>
             </div>
-            <div><label>شروع</label><input id="dcStart" type="date"></div>
-            <div><label>پایان</label><input id="dcEnd" type="date"></div>
+            <div><label>شروع</label><input id="dcStart" type="text" dir="ltr" placeholder="مثلاً 1404/01/01"></div>
+            <div><label>پایان</label><input id="dcEnd" type="text" dir="ltr" placeholder="مثلاً 1404/04/01"></div>
             <div><label>سقف استفاده (۰=نامحدود)</label><input id="dcMax" type="number" value="0"></div>
             <button class="action" type="submit">ایجاد</button>
         </form>
@@ -156,6 +156,20 @@ pre#logBox { background:#0f172a; color:#cbd5e1; padding:14px; border-radius:10px
         <p id="smsCurrentKey" style="font-size:12px; color:#667; margin-bottom:8px;"></p>
         <p id="smsTestResult" style="font-size:13px; font-weight:600;"></p>
     </div>
+    <div class="card">
+        <h3 style="margin-bottom:10px;">درگاه پرداخت (زرین‌پال)</h3>
+        <p style="font-size:12px; color:#667; margin-bottom:12px;">
+            بدون تنظیم این بخش، دکمه خرید اشتراک کار نمی‌کند.
+        </p>
+        <form class="inline-form" id="paymentSettingsForm">
+            <div><label>Merchant ID</label><input id="paymentMerchantId" type="password" dir="ltr" placeholder="برای تغییر، مقدار جدید را وارد کنید"></div>
+            <div><label>آدرس بازگشت (Callback URL)</label><input id="paymentCallbackUrl" type="text" dir="ltr" placeholder="https://yourdomain.com/verify_payment"></div>
+            <button class="action" type="submit">ذخیره</button>
+            <button class="action secondary" type="button" id="paymentTestBtn">تست اتصال</button>
+        </form>
+        <p id="paymentCurrentKey" style="font-size:12px; color:#667; margin-bottom:8px;"></p>
+        <p id="paymentTestResult" style="font-size:13px; font-weight:600;"></p>
+    </div>
 </div>
 
 <div id="aiTab" class="panel">
@@ -197,7 +211,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (btn.dataset.tab === 'pricingTab') loadPricing();
         if (btn.dataset.tab === 'discountsTab') loadDiscounts();
         if (btn.dataset.tab === 'logsTab') loadLogs();
-        if (btn.dataset.tab === 'platformTab') { loadPlatformSettings(); loadSmsSettings(); }
+        if (btn.dataset.tab === 'platformTab') { loadPlatformSettings(); loadSmsSettings(); loadPaymentSettings(); }
         if (btn.dataset.tab === 'aiTab') loadAiSettings();
     });
 });
@@ -407,6 +421,41 @@ document.getElementById('smsTestBtn').addEventListener('click', async () => {
     resultEl.style.color = '#667';
     resultEl.textContent = 'در حال تست اتصال...';
     const res = await fetch('/admin/sms-settings/test', { method: 'POST' });
+    const data = await res.json();
+    resultEl.style.color = data.success ? '#065f46' : '#991b1b';
+    resultEl.textContent = data.message || '';
+});
+
+async function loadPaymentSettings() {
+    const res = await fetch('/admin/payment-settings');
+    const data = await res.json();
+    if (!data.success) return;
+    const s = data.data;
+    document.getElementById('paymentCallbackUrl').value = s.zarinpal_callback_url || '';
+    document.getElementById('paymentMerchantId').value = '';
+    document.getElementById('paymentCurrentKey').textContent = s.zarinpal_merchant_id_set
+        ? `Merchant ID فعلی: ${s.zarinpal_merchant_id_masked}`
+        : 'هنوز Merchant ID تنظیم نشده است.';
+    document.getElementById('paymentTestResult').textContent = '';
+}
+
+document.getElementById('paymentSettingsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = new URLSearchParams({
+        zarinpal_merchant_id: document.getElementById('paymentMerchantId').value,
+        zarinpal_callback_url: document.getElementById('paymentCallbackUrl').value,
+    });
+    const res = await fetch('/admin/payment-settings/update', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+    const data = await res.json();
+    alert(data.message || (data.success ? 'ذخیره شد' : 'خطا'));
+    if (data.success) loadPaymentSettings();
+});
+
+document.getElementById('paymentTestBtn').addEventListener('click', async () => {
+    const resultEl = document.getElementById('paymentTestResult');
+    resultEl.style.color = '#667';
+    resultEl.textContent = 'در حال تست اتصال...';
+    const res = await fetch('/admin/payment-settings/test', { method: 'POST' });
     const data = await res.json();
     resultEl.style.color = data.success ? '#065f46' : '#991b1b';
     resultEl.textContent = data.message || '';

@@ -123,3 +123,13 @@ class TestDiscountCodes:
         assert first["success"] is True
         second = license_manager.validate_and_apply_discount("ONEUSE", "monthly", 1000000)
         assert second["success"] is False
+
+    def test_list_discount_codes_formats_dates_as_shamsi(self, license_manager):
+        license_manager.create_discount_code(
+            "SUMMER", "تخفیف تابستان", "percent", 10,
+            start_date=datetime(2025, 6, 22), end_date=datetime(2025, 9, 22),
+        )
+        codes = license_manager.list_discount_codes()
+        entry = next(c for c in codes if c["code"] == "SUMMER")
+        assert entry["start_date"] == "1404/04/01"
+        assert entry["end_date"] == "1404/06/31"

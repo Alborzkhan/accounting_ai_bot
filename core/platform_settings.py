@@ -20,6 +20,8 @@ KNOWN_KEYS = [
     "sms_username",
     "sms_password",
     "sms_sender",
+    "zarinpal_merchant_id",
+    "zarinpal_callback_url",
 ]
 
 

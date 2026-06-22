@@ -1032,8 +1032,8 @@ async def admin_discounts_create(
         return {"success": False, "message": "دسترسی غیرمجاز"}
     if discount_type not in ("percent", "fixed"):
         return {"success": False, "message": "نوع تخفیف نامعتبر است."}
-    sd = datetime.strptime(start_date, "%Y-%m-%d") if start_date else None
-    ed = datetime.strptime(end_date, "%Y-%m-%d") if end_date else None
+    sd = _parse_report_date(start_date)
+    ed = _parse_report_date(end_date, end_of_day=True)
     return license_manager.create_discount_code(
         code=(code or "").strip().upper(), title=title, discount_type=discount_type,
         discount_value=discount_value, applicable_plan=(applicable_plan or "").strip(),
@@ -1208,6 +1208,46 @@ async def admin_sms_settings_test(request: Request) -> dict:
     if not uid or not auth_manager.is_user_admin(uid):
         return {"success": False, "message": "دسترسی غیرمجاز"}
     return test_sms_connection()
+
+
+@app.get("/admin/payment-settings")
+async def admin_payment_settings_get(request: Request) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    settings = platform_settings.get_all()
+    return {
+        "success": True,
+        "data": {
+            "zarinpal_merchant_id_masked": _mask_key(settings.get("zarinpal_merchant_id", "")),
+            "zarinpal_merchant_id_set": bool(settings.get("zarinpal_merchant_id")),
+            "zarinpal_callback_url": settings.get("zarinpal_callback_url", ""),
+        },
+    }
+
+
+@app.post("/admin/payment-settings/update")
+async def admin_payment_settings_update(
+    request: Request,
+    zarinpal_merchant_id: Optional[str] = Form(None),
+    zarinpal_callback_url: Optional[str] = Form(None),
+) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    updates = {"zarinpal_callback_url": zarinpal_callback_url or ""}
+    if zarinpal_merchant_id:
+        updates["zarinpal_merchant_id"] = zarinpal_merchant_id
+    platform_settings.update_many(updates)
+    return {"success": True, "message": "تنظیمات درگاه پرداخت ذخیره شد."}
+
+
+@app.post("/admin/payment-settings/test")
+async def admin_payment_settings_test(request: Request) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    return payment_gateway.test_connection()
 
 
 @app.get("/admin/license/{user_id}")

@@ -19,17 +19,31 @@ class PaymentGateway:
     def __init__(self, db_path: str = "accounting.db") -> None:
         self.engine = init_db(db_path)
         self.Session = sessionmaker(bind=self.engine)
-    
+        self._load_config()
+
+    def _load_config(self) -> None:
+        """تنظیمات پنل ادمین (دیتابیس) را تازه می‌خواند تا تغییرات بدون ری‌استارت سرور اعمال شوند؛
+        متغیرهای .env فقط fallback برای توسعه/سازگاری قدیمی‌اند."""
+        settings = {}
+        try:
+            from core.platform_settings import PlatformSettingsManager
+            settings = PlatformSettingsManager().get_all()
+        except Exception:
+            settings = {}
+        self.merchant_id = settings.get("zarinpal_merchant_id") or ZARINPAL_MERCHANT_ID
+        self.callback_url = settings.get("zarinpal_callback_url") or ZARINPAL_CALLBACK_URL
+
     def create_payment_request(self, user_id: int, amount: int, plan_type: str, description: str = "اشتراک حسابدار هوشمند", discount_code: str = "") -> Dict:
         """ایجاد درخواست پرداخت و دریافت لینک زرین‌پال"""
-        
+        self._load_config()
+
         # مبلغ به تومان (زرین‌پال به ریال نیاز داره)
         amount_rial = amount * 10
-        
+
         data = {
-            "merchant_id": ZARINPAL_MERCHANT_ID,
+            "merchant_id": self.merchant_id,
             "amount": amount_rial,
-            "callback_url": ZARINPAL_CALLBACK_URL,
+            "callback_url": self.callback_url,
             "description": f"{description} - پلن {plan_type}",
             "metadata": {
                 "user_id": str(user_id),
@@ -66,19 +80,20 @@ class PaymentGateway:
     
     def verify_payment(self, authority: str, status: str, user_id: Optional[int] = None, plan_type: Optional[str] = None) -> Dict:
         """تأیید نهایی پرداخت بعد از بازگشت کاربر"""
-        
+        self._load_config()
+
         if status != "OK":
             return {"success": False, "message": "پرداخت لغو شد یا ناموفق بود."}
-        
+
         # پیدا کردن تراکنش در دیتابیس
         transaction = self._get_transaction_by_authority(authority)
         if not transaction:
             return {"success": False, "message": "تراکنش یافت نشد."}
-        
+
         amount_rial = transaction.amount * 10
-        
+
         data = {
-            "merchant_id": ZARINPAL_MERCHANT_ID,
+            "merchant_id": self.merchant_id,
             "authority": authority,
             "amount": amount_rial
         }
@@ -160,6 +175,26 @@ class PaymentGateway:
         finally:
             session.close()
     
+    def test_connection(self) -> Dict:
+        """برای دکمه «تست اتصال» در پنل ادمین: یک درخواست پرداخت آزمایشی (بدون ذخیره تراکنش) می‌سازد.
+        این فقط یک authority/توکن می‌گیرد؛ تا کاربر واقعاً وارد صفحه پرداخت زرین‌پال نشود و تکمیلش نکند، هیچ مبلغی کسر نمی‌شود."""
+        self._load_config()
+        if not self.merchant_id:
+            return {"success": False, "message": "Merchant ID زرین‌پال تنظیم نشده است."}
+        try:
+            response = requests.post(ZARINPAL_REQUEST_URL, json={
+                "merchant_id": self.merchant_id,
+                "amount": 1000,
+                "callback_url": self.callback_url or "https://example.com/callback",
+                "description": "تست اتصال زرین‌پال",
+            }, timeout=10)
+            data = response.json()
+            if data.get("data", {}).get("code") == 100:
+                return {"success": True, "message": "✅ اتصال به زرین‌پال با موفقیت برقرار شد."}
+            return {"success": False, "message": f"❌ اتصال ناموفق: {data.get('errors', {}).get('message', 'نامشخص')}"}
+        except Exception as e:
+            return {"success": False, "message": f"❌ خطا در اتصال به زرین‌پال: {str(e)}"}
+
     def get_pricing_plans(self) -> Dict:
         """دریافت لیست پلن‌های قیمتی"""
         return {

@@ -245,8 +245,8 @@ class LicenseManager:
                 "discount_type": c.discount_type, "discount_value": c.discount_value,
                 "applicable_plan": c.applicable_plan or "", "is_active": c.is_active,
                 "used_count": c.used_count, "max_uses": c.max_uses,
-                "start_date": c.start_date.strftime("%Y-%m-%d") if c.start_date else "",
-                "end_date": c.end_date.strftime("%Y-%m-%d") if c.end_date else "",
+                "start_date": jdatetime.date.fromgregorian(date=c.start_date).strftime("%Y/%m/%d") if c.start_date else "",
+                "end_date": jdatetime.date.fromgregorian(date=c.end_date).strftime("%Y/%m/%d") if c.end_date else "",
             } for c in codes]
         finally:
             session.close()
