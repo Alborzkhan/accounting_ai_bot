@@ -139,6 +139,13 @@ INVOICE_EXTRACT_PROMPT = """تو دستیار ثبت فاکتور برای یک 
 {"success": false, "message": "این متن مربوط به ثبت فاکتور نیست."}
 """
 
+ACCOUNT_QUERY_PROMPT = """تو نارین هستی، حسابدار و حسابرس هوشمند. کاربر خلاصه‌ی مانده و گردش یک حساب حسابداری را به تو می‌دهد.
+یک تحلیل کوتاه (حداکثر دو جمله)، مفید و فارسی درباره وضعیت این حساب بده (روند، نکته قابل توجه یا توصیه).
+فقط در محدوده حسابداری/مالی پاسخ بده، بدون توضیح اضافه.
+همیشه خروجی را فقط به این فرمت JSON بده:
+{"success": true, "explanation": "..."}
+"""
+
 OLLAMA_BASE_URL = "http://localhost:11434"
 
 SUPPORTED_PROVIDERS = {
@@ -286,6 +293,20 @@ class LLMProcessor:
             "missing_info": result.get("missing_info") or [],
             "message": result.get("message", ""),
         }
+
+    def answer_account_query(self, summary: str) -> dict:
+        """تحلیل کوتاه یک حساب برای دکمه «پرسش از نارین» در صفحه جزئیات حساب."""
+        self._load_config()
+        if self.api_key:
+            result = self._call_cloud(summary, ACCOUNT_QUERY_PROMPT)
+        elif self.use_ollama:
+            result = self._call_ollama(summary, system_prompt=ACCOUNT_QUERY_PROMPT)
+        else:
+            return {"success": False, "message": "سرویس هوش مصنوعی تنظیم نشده است."}
+
+        if not result.get("success"):
+            return {"success": False, "message": result.get("message", "تحلیل ممکن نشد.")}
+        return {"success": True, "explanation": str(result.get("explanation", "")).strip()}
 
     def _call_openai(self, text: str, system_prompt: str = LLM_SYSTEM_PROMPT, base_url: str = None) -> dict:
         import requests

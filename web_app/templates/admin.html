@@ -141,6 +141,21 @@ pre#logBox { background:#0f172a; color:#cbd5e1; padding:14px; border-radius:10px
             <button class="action" type="submit">ذخیره</button>
         </form>
     </div>
+    <div class="card">
+        <h3 style="margin-bottom:10px;">سرویس پیامک (فراپیامک)</h3>
+        <p style="font-size:12px; color:#667; margin-bottom:12px;">
+            بدون تنظیم این بخش، کد تایید ورود (OTP) فقط در لاگ سرور ثبت می‌شود و پیامک واقعی ارسال نمی‌شود.
+        </p>
+        <form class="inline-form" id="smsSettingsForm">
+            <div><label>نام کاربری</label><input id="smsUsername" type="text" dir="ltr"></div>
+            <div><label>شماره فرستنده</label><input id="smsSender" type="text" dir="ltr"></div>
+            <div><label>رمز عبور</label><input id="smsPassword" type="password" dir="ltr" placeholder="برای تغییر، رمز جدید را وارد کنید"></div>
+            <button class="action" type="submit">ذخیره</button>
+            <button class="action secondary" type="button" id="smsTestBtn">تست اتصال</button>
+        </form>
+        <p id="smsCurrentKey" style="font-size:12px; color:#667; margin-bottom:8px;"></p>
+        <p id="smsTestResult" style="font-size:13px; font-weight:600;"></p>
+    </div>
 </div>
 
 <div id="aiTab" class="panel">
@@ -182,7 +197,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (btn.dataset.tab === 'pricingTab') loadPricing();
         if (btn.dataset.tab === 'discountsTab') loadDiscounts();
         if (btn.dataset.tab === 'logsTab') loadLogs();
-        if (btn.dataset.tab === 'platformTab') loadPlatformSettings();
+        if (btn.dataset.tab === 'platformTab') { loadPlatformSettings(); loadSmsSettings(); }
         if (btn.dataset.tab === 'aiTab') loadAiSettings();
     });
 });
@@ -191,12 +206,22 @@ async function loadUsers() {
     const res = await fetch('/admin/users');
     const data = await res.json();
     const table = document.getElementById('usersTable');
-    let rows = '<tr><th>ID</th><th>نام</th><th>موبایل</th><th>کسب‌وکار</th><th>نوع</th><th>دسترسی</th><th>تاریخ ثبت</th></tr>';
+    let rows = '<tr><th>ID</th><th>نام</th><th>موبایل</th><th>کسب‌وکار</th><th>نوع</th><th>دسترسی</th><th>تاریخ ثبت</th><th></th></tr>';
     (data.data || []).forEach(u => {
         const badge = u.is_admin ? '<span class="badge badge-admin">ادمین</span>' : '<span class="badge badge-user">کاربر</span>';
-        rows += `<tr><td>${u.id}</td><td>${esc(u.name)}</td><td>${esc(u.mobile)}</td><td>${esc(u.business_name)}</td><td>${esc(u.business_type)}</td><td>${badge}</td><td>${esc(u.created_at)}</td></tr>`;
+        const toggleBtn = `<button class="action secondary" onclick="toggleAdmin(${u.id}, ${u.is_admin ? 'false' : 'true'})">${u.is_admin ? 'سلب دسترسی ادمین' : 'ارتقا به ادمین'}</button>`;
+        rows += `<tr><td>${u.id}</td><td>${esc(u.name)}</td><td>${esc(u.mobile)}</td><td>${esc(u.business_name)}</td><td>${esc(u.business_type)}</td><td>${badge}</td><td>${esc(u.created_at)}</td><td>${toggleBtn}</td></tr>`;
     });
     table.innerHTML = rows;
+}
+
+async function toggleAdmin(userId, makeAdmin) {
+    if (!confirm(makeAdmin ? 'این کاربر ادمین شود؟' : 'دسترسی ادمین این کاربر حذف شود؟')) return;
+    const body = new URLSearchParams({ is_admin: makeAdmin });
+    const res = await fetch(`/admin/users/${userId}/set-admin`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+    const data = await res.json();
+    alert(data.message || (data.success ? 'انجام شد' : 'خطا'));
+    loadUsers();
 }
 
 document.getElementById('grantForm').addEventListener('submit', async (e) => {
@@ -348,6 +373,43 @@ document.getElementById('platformSettingsForm').addEventListener('submit', async
     const res = await fetch('/admin/platform-settings/update', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
     const data = await res.json();
     alert(data.message || (data.success ? 'ذخیره شد' : 'خطا'));
+});
+
+async function loadSmsSettings() {
+    const res = await fetch('/admin/sms-settings');
+    const data = await res.json();
+    if (!data.success) return;
+    const s = data.data;
+    document.getElementById('smsUsername').value = s.sms_username || '';
+    document.getElementById('smsSender').value = s.sms_sender || '';
+    document.getElementById('smsPassword').value = '';
+    document.getElementById('smsCurrentKey').textContent = s.sms_password_set
+        ? `رمز فعلی: ${s.sms_password_masked}`
+        : 'هنوز رمزی تنظیم نشده است.';
+    document.getElementById('smsTestResult').textContent = '';
+}
+
+document.getElementById('smsSettingsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = new URLSearchParams({
+        sms_username: document.getElementById('smsUsername').value,
+        sms_sender: document.getElementById('smsSender').value,
+        sms_password: document.getElementById('smsPassword').value,
+    });
+    const res = await fetch('/admin/sms-settings/update', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+    const data = await res.json();
+    alert(data.message || (data.success ? 'ذخیره شد' : 'خطا'));
+    if (data.success) loadSmsSettings();
+});
+
+document.getElementById('smsTestBtn').addEventListener('click', async () => {
+    const resultEl = document.getElementById('smsTestResult');
+    resultEl.style.color = '#667';
+    resultEl.textContent = 'در حال تست اتصال...';
+    const res = await fetch('/admin/sms-settings/test', { method: 'POST' });
+    const data = await res.json();
+    resultEl.style.color = data.success ? '#065f46' : '#991b1b';
+    resultEl.textContent = data.message || '';
 });
 
 async function loadAiSettings() {

@@ -12,3 +12,4 @@ reportlab>=4.0
 matplotlib>=3.8
 pandas>=2.0
 python-barcode>=0.15
+alembic>=1.13

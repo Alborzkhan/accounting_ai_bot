@@ -7,10 +7,9 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple, Any
 from sqlalchemy.orm import sessionmaker
 from database.models import (
-    init_db, Customer, SellerProfile, Vendor,
+    init_db, Customer, Vendor,
     ProformaInvoice, InvoiceItem, PurchaseInvoice, PurchaseItem
 )
-from core.seller_manager import SellerManager
 from core.product_manager import ProductManager
 from core.accounting_engine import AccountingEngine
 
@@ -18,7 +17,6 @@ class InvoiceGenerator:
     def __init__(self, db_path: str = "accounting.db") -> None:
         self.engine = init_db(db_path)
         self.Session = sessionmaker(bind=self.engine)
-        self.seller_manager = SellerManager(db_path)
         self.product_manager = ProductManager(db_path)
         self.accounting_engine = AccountingEngine(db_path)
     

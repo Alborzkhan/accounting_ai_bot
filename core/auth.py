@@ -10,7 +10,6 @@ from typing import Optional, Dict
 from sqlalchemy.orm import sessionmaker
 from database.models import init_db
 from database.license_models import User, License
-from config import FARAPAYAMAK_USERNAME, FARAPAYAMAK_PASSWORD
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +21,7 @@ MOBILE_PATTERN = re.compile(r'^09\d{9}$')
 
 class AuthManager:
     def __init__(self, db_path: str = "accounting.db") -> None:
+        self.db_path = db_path
         self.engine = init_db(db_path)
         self.Session = sessionmaker(bind=self.engine)
 
@@ -53,10 +53,10 @@ class AuthManager:
             user.otp_requested_at = now
             session.commit()
 
-            from core.sms_service import send_otp_sms
+            from core.sms_service import send_otp_sms, has_sms_credentials
             send_otp_sms(mobile, code)
             result = {"success": True, "message": "کد تایید برای شما ارسال شد."}
-            if not FARAPAYAMAK_USERNAME or not FARAPAYAMAK_PASSWORD:
+            if not has_sms_credentials():
                 # حالت توسعه: چون پیامک واقعی ارسال نمی‌شود، کد برای تست مستقیم در پاسخ برگردانده می‌شود.
                 result["dev_code"] = code
                 result["message"] = "حالت توسعه: پیامک واقعی متصل نیست، کد تایید مستقیماً نمایش داده می‌شود."
@@ -102,7 +102,7 @@ class AuthManager:
             if is_new:
                 try:
                     from core.license_manager import LicenseManager
-                    LicenseManager().generate_license_key(user_id, "free_trial")
+                    LicenseManager(self.db_path).generate_license_key(user_id, "free_trial")
                 except Exception:
                     logger.exception("free_trial license issuance failed for user_id=%s", user_id)
 
@@ -249,5 +249,17 @@ class AuthManager:
         try:
             user = session.query(User).filter(User.id == user_id).first()
             return user.is_admin if user else False
+        finally:
+            session.close()
+
+    def set_user_admin(self, user_id: int, is_admin: bool) -> Dict:
+        session = self.Session()
+        try:
+            user = session.query(User).filter(User.id == user_id).first()
+            if not user:
+                return {"success": False, "message": "کاربر یافت نشد."}
+            user.is_admin = is_admin
+            session.commit()
+            return {"success": True, "message": "دسترسی ادمین بروز شد."}
         finally:
             session.close()

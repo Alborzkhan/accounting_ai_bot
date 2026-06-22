@@ -17,6 +17,9 @@ KNOWN_KEYS = [
     "ai_provider",
     "ai_api_key",
     "ai_model",
+    "sms_username",
+    "sms_password",
+    "sms_sender",
 ]
 
 

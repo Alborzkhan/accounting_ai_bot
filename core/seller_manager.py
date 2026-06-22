@@ -11,7 +11,8 @@ from sqlalchemy.orm import sessionmaker
 from database.models import SellerProfile, init_db
 
 class SellerManager:
-    def __init__(self, db_path: str = "accounting.db") -> None:
+    def __init__(self, user_id: int, db_path: str = "accounting.db") -> None:
+        self.user_id = user_id
         self.engine = init_db(db_path)
         self.Session = sessionmaker(bind=self.engine)
     
@@ -32,8 +33,8 @@ class SellerManager:
         """ایجاد یا به روز رسانی پروفایل فروشنده"""
         session = self.Session()
         try:
-            profile = session.query(SellerProfile).first()
-            
+            profile = session.query(SellerProfile).filter_by(user_id=self.user_id).first()
+
             if profile:
                 # به روز رسانی
                 for key, value in data.items():
@@ -42,7 +43,7 @@ class SellerManager:
                 message = "پروفایل فروشنده با موفقیت به روز شد."
             else:
                 # ایجاد جدید
-                profile = SellerProfile(**data)
+                profile = SellerProfile(user_id=self.user_id, **data)
                 session.add(profile)
                 message = "پروفایل فروشنده با موفقیت ایجاد شد."
             
@@ -58,7 +59,7 @@ class SellerManager:
         """دریافت پروفایل فروشنده"""
         session = self.Session()
         try:
-            return session.query(SellerProfile).first()
+            return session.query(SellerProfile).filter_by(user_id=self.user_id).first()
         finally:
             session.close()
     
@@ -96,8 +97,20 @@ class SellerManager:
 
 
 if __name__ == "__main__":
-    manager = SellerManager()
-    
+    from database.models import User
+
+    mobile = input("📱 موبایل کاربری که این پروفایل فروشنده برایش است: ").strip()
+    _session = sessionmaker(bind=init_db("accounting.db"))()
+    try:
+        _user = _session.query(User).filter_by(mobile=mobile).first()
+    finally:
+        _session.close()
+    if not _user:
+        print(f"❌ کاربری با موبایل {mobile} یافت نشد.")
+        sys.exit(1)
+
+    manager = SellerManager(user_id=_user.id)
+
     # اگر پروفایل وجود نداشت، راه‌اندازی کن
     if not manager.get_profile():
         print("⚠️ پروفایل فروشنده یافت نشد. لطفاً اطلاعات را وارد کنید.")

@@ -31,6 +31,7 @@ from core.invoice_generator import InvoiceGenerator
 from core.inventory_reconciler import InventoryReconciler
 from core.platform_settings import PlatformSettingsManager
 from core.building_manager import BuildingManager
+from core.sms_service import test_sms_connection
 from reports.invoice_pdf import InvoicePDF
 from ai_handlers.voice_to_accounting import VoiceToAccounting
 from ai_handlers.llm_processor import LLMProcessor, SUPPORTED_PROVIDERS
@@ -212,6 +213,55 @@ async def get_trial_balance(request: Request, date_from: str = "", date_to: str 
                 "credit": row.total_credit
             })
     return {"data": data}
+
+# جزئیات تفصیلی یک حساب (آخرین گردش‌ها)
+@app.get("/sub_details")
+async def sub_details(request: Request, code: str) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"items": []}
+    from database.models import Account, JournalEntry, JournalLine
+    session = engine.Session()
+    try:
+        account = session.query(Account).filter_by(code=code).first()
+        if not account:
+            return {"items": []}
+        rows = session.query(JournalLine, JournalEntry).join(
+            JournalEntry, JournalEntry.id == JournalLine.entry_id
+        ).filter(
+            JournalLine.account_id == account.id,
+            JournalEntry.user_id == user_id,
+        ).order_by(JournalEntry.date.desc()).limit(30).all()
+        items = []
+        for line, entry in rows:
+            sign = "+" if line.side == "debit" else "-"
+            date_str = entry.date.strftime("%Y/%m/%d") if entry.date else ""
+            name = f"{date_str} — {line.description or entry.description or ''}"
+            items.append({"name": name, "value": f"{sign}{line.amount:,.0f}"})
+        return {"items": items}
+    finally:
+        session.close()
+
+
+# تحلیل هوشمند یک حساب
+@app.get("/ai_query")
+async def ai_query(request: Request, code: str) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"explanation": "ابتدا وارد شوید."}
+    balances = engine.get_trial_balance(user_id=user_id)
+    row = next((r for r in balances if r.code == code), None)
+    if not row:
+        return {"explanation": "حسابی با این کد یافت نشد."}
+    balance_text = (
+        f"حساب «{row.name}» (کد {code}): گردش بدهکار {row.total_debit:,.0f} تومان، "
+        f"گردش بستانکار {row.total_credit:,.0f} تومان، مانده {row.total_debit - row.total_credit:,.0f} تومان."
+    )
+    result = LLMProcessor().answer_account_query(balance_text)
+    if result.get("success") and result.get("explanation"):
+        return {"explanation": result["explanation"]}
+    return {"explanation": f"{balance_text} (برای تحلیل هوشمند، سرویس هوش مصنوعی را در پنل ادمین تنظیم کنید.)"}
+
 
 # لیست آخرین اسناد
 @app.get("/vouchers")
@@ -1118,6 +1168,48 @@ async def admin_ai_settings_test(request: Request) -> dict:
     return fresh_processor.test_connection()
 
 
+@app.get("/admin/sms-settings")
+async def admin_sms_settings_get(request: Request) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    settings = platform_settings.get_all()
+    return {
+        "success": True,
+        "data": {
+            "sms_username": settings.get("sms_username", ""),
+            "sms_sender": settings.get("sms_sender", ""),
+            "sms_password_masked": _mask_key(settings.get("sms_password", "")),
+            "sms_password_set": bool(settings.get("sms_password")),
+        },
+    }
+
+
+@app.post("/admin/sms-settings/update")
+async def admin_sms_settings_update(
+    request: Request,
+    sms_username: Optional[str] = Form(None),
+    sms_sender: Optional[str] = Form(None),
+    sms_password: Optional[str] = Form(None),
+) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    updates = {"sms_username": sms_username or "", "sms_sender": sms_sender or ""}
+    if sms_password:
+        updates["sms_password"] = sms_password
+    platform_settings.update_many(updates)
+    return {"success": True, "message": "تنظیمات پیامک ذخیره شد."}
+
+
+@app.post("/admin/sms-settings/test")
+async def admin_sms_settings_test(request: Request) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    return test_sms_connection()
+
+
 @app.get("/admin/license/{user_id}")
 async def admin_license(request: Request, user_id: int) -> dict:
     uid = get_user_id(request)
@@ -1131,6 +1223,18 @@ async def admin_users(request: Request) -> dict:
     if not uid or not auth_manager.is_user_admin(uid):
         return {"success": False, "message": "دسترسی غیرمجاز"}
     return {"data": auth_manager.get_all_users()}
+
+
+@app.post("/admin/users/{user_id}/set-admin")
+async def admin_set_user_admin(request: Request, user_id: int, is_admin: bool = Form(...)) -> dict:
+    uid = get_user_id(request)
+    if not uid or not auth_manager.is_user_admin(uid):
+        return {"success": False, "message": "دسترسی غیرمجاز"}
+    if user_id == uid and not is_admin:
+        return {"success": False, "message": "نمی‌توانید دسترسی ادمین خودتان را حذف کنید."}
+    result = auth_manager.set_user_admin(user_id, is_admin)
+    logger.info("Admin %s set is_admin=%s for user_id=%s", uid, is_admin, user_id)
+    return result
 
 ALLOWED_PLAN_TYPES = {"free_trial", "monthly", "quarterly", "semi_annual", "annual"}
 
