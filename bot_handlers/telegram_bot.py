@@ -482,6 +482,19 @@ class TelegramBot:
                     f"📊 بستانکار: {self.get_account_name(data['credit_account'])}"
                 )
                 await self.send_notification_if_needed(update, user_id)
+                return
+
+            from core.ai_voucher_fallback import try_ai_voucher
+            ai_result = await asyncio.to_thread(try_ai_voucher, self.engine, transcript, user_id)
+            if ai_result.get("success"):
+                await update.message.reply_text(
+                    f"✅ سند شماره {ai_result['entry_id']} ثبت شد. (تشخیص با هوش مصنوعی)\n\n"
+                    f"💰 مبلغ: {ai_result['amount']:,.0f} تومان\n"
+                    f"📝 شرح: {ai_result['description'][:100]}\n"
+                    f"📊 بدهکار: {self.get_account_name(ai_result['debit_account'])}\n"
+                    f"📊 بستانکار: {self.get_account_name(ai_result['credit_account'])}"
+                )
+                await self.send_notification_if_needed(update, user_id)
             else:
                 await update.message.reply_text(
                     "⚠️ متوجه ویس تو نشدم. لطفاً واضح‌تر بگو.\n"

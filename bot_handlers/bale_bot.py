@@ -109,11 +109,23 @@ class BaleBot:
                         f"📊 بستانکار: {data['credit_account']}"
                     )
                 else:
-                    self.send_message(
-                        chat_id,
-                        "⚠️ اطلاعات ناقص است. لطفاً واضح‌تر صحبت کنید.\n\n"
-                        "مثال: 'خرید 100 عدد خودکار 5000 تومان'"
-                    )
+                    from core.ai_voucher_fallback import try_ai_voucher
+                    ai_result = try_ai_voucher(self.engine, transcript, user_id)
+                    if ai_result.get("success"):
+                        self.send_message(
+                            chat_id,
+                            f"✅ سند شماره {ai_result['entry_id']} با موفقیت ثبت شد. (تشخیص با هوش مصنوعی)\n\n"
+                            f"💰 مبلغ: {ai_result['amount']:,.0f} تومان\n"
+                            f"📝 شرح: {ai_result['description'][:100]}\n"
+                            f"📊 بدهکار: {ai_result['debit_account']}\n"
+                            f"📊 بستانکار: {ai_result['credit_account']}"
+                        )
+                    else:
+                        self.send_message(
+                            chat_id,
+                            "⚠️ اطلاعات ناقص است. لطفاً واضح‌تر صحبت کنید.\n\n"
+                            "مثال: 'خرید 100 عدد خودکار 5000 تومان'"
+                        )
             except Exception as e:
                 self.send_message(chat_id, f"❌ خطا در پردازش ویس: {str(e)}")
         else:
@@ -173,6 +185,11 @@ class BaleBot:
             if "متوجه نشدم" in response:
                 # اگر موتور هوشمند نفهمید، از موتور متنی استفاده کن
                 result = self.text_handler.parse_and_create_voucher(text, user_id=user_id)
+                if not result["success"]:
+                    from core.ai_voucher_fallback import try_ai_voucher
+                    ai_result = try_ai_voucher(self.engine, text, user_id)
+                    if ai_result.get("success"):
+                        result = ai_result
                 self.send_message(chat_id, result["message"])
             else:
                 self.send_message(chat_id, response)

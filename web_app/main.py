@@ -32,6 +32,7 @@ from core.inventory_reconciler import InventoryReconciler
 from core.platform_settings import PlatformSettingsManager
 from core.building_manager import BuildingManager
 from core.sms_service import test_sms_connection
+from core.ai_voucher_fallback import try_ai_voucher
 from reports.invoice_pdf import InvoicePDF
 from ai_handlers.voice_to_accounting import VoiceToAccounting
 from ai_handlers.llm_processor import LLMProcessor, SUPPORTED_PROVIDERS
@@ -145,6 +146,10 @@ async def create_voucher(request: Request, description: str = Form(...)) -> dict
         return {"success": False, "message": license_status["message"]}
     try:
         result = text_handler.parse_and_create_voucher(description, user_id=user_id)
+        if not result["success"]:
+            ai_result = try_ai_voucher(engine, description, user_id)
+            if ai_result.get("success"):
+                return {"success": True, "message": ai_result["message"]}
         return {"success": result["success"], "message": result["message"]}
     except Exception:
         logger.exception("create_voucher failed for user_id=%s", user_id)
@@ -188,8 +193,16 @@ async def process_voice(request: Request, voice: UploadFile = File(...)) -> dict
                 "amount": data["amount"],
                 "type": data["type"]
             }
-        else:
-            return {"success": False, "message": "اطلاعات ناقص است. لطفاً واضح‌تر صحبت کنید."}
+
+        ai_result = try_ai_voucher(engine, transcript, user_id)
+        if ai_result.get("success"):
+            return {
+                "success": True,
+                "message": ai_result["message"],
+                "amount": ai_result["amount"],
+                "type": ai_result["type"],
+            }
+        return {"success": False, "message": "اطلاعات ناقص است. لطفاً واضح‌تر صحبت کنید."}
     except Exception:
         logger.exception("process_voice failed for user_id=%s", user_id)
         return {"success": False, "message": "خطا در پردازش صدا. لطفاً دوباره تلاش کنید."}
