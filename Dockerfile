@@ -11,6 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+# نسخه CPU-only تورچ را جدا و اول نصب می‌کنیم؛ وگرنه pip به‌خاطر وابستگی openai-whisper
+# نسخه پیش‌فرض را می‌گیرد که چند گیگابایت ویل‌های CUDA بی‌مصرف (این کانتینر GPU ندارد) دارد.
+RUN pip install --no-cache-dir --timeout 120 --retries 10 torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir --timeout 120 --retries 10 -r requirements.txt
 
 COPY . .
