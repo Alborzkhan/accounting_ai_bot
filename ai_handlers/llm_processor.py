@@ -165,6 +165,10 @@ SUPPORTED_PROVIDERS = {
         "label": "DeepSeek", "kind": "openai_compatible",
         "base_url": "https://api.deepseek.com/chat/completions", "default_model": "deepseek-chat",
     },
+    "gapgpt": {
+        "label": "GapGPT (دسترسی ایرانی به ChatGPT/Claude/Gemini، پرداخت ریالی)", "kind": "openai_compatible",
+        "base_url": "https://api.gapgpt.app/v1/chat/completions", "default_model": "chatgpt",
+    },
     "openrouter": {
         "label": "OpenRouter (چند مدل، گزینه‌های رایگان)", "kind": "openai_compatible",
         "base_url": "https://openrouter.ai/api/v1/chat/completions", "default_model": "meta-llama/llama-3.1-8b-instruct:free",
