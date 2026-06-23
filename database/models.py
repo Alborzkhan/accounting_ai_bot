@@ -165,16 +165,6 @@ class Product(Base):
     category = Column(String(50))
     created_at = Column(DateTime, default=datetime.now)
 
-class BusinessProfile(Base):
-    __tablename__ = 'business_profiles'
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, unique=True, nullable=False)
-    business_name = Column(String(100))
-    business_type = Column(String(50))
-    industry = Column(String(50))
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-
 class ProductCategory(Base):
     __tablename__ = 'product_categories'
     id = Column(Integer, primary_key=True)
@@ -183,18 +173,6 @@ class ProductCategory(Base):
     business_type = Column(String(50))
     keywords = Column(String(500))
     created_at = Column(DateTime, default=datetime.now)
-
-class Business(Base):
-    __tablename__ = 'businesses'
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False)
-    type = Column(String(50))
-    user_id = Column(Integer)
-    currency = Column(String(10), default='IRT')
-    vat_rate = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.now)
-    license_key = Column(String(100), unique=True)
-    is_active = Column(Boolean, default=True)
 
 
 def _ensure_columns(engine, table_name, column_defs):
