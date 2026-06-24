@@ -6,7 +6,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.logging_config import setup_logging
 setup_logging()
 
-import asyncio
+import threading
+import time
 from datetime import datetime
 from core.accounting_engine import AccountingEngine
 from core.text_command_handler import TextCommandHandler
@@ -253,22 +254,23 @@ class BaleBot:
                     if not chat_id:
                         continue
                     
-                    # بررسی نوع پیام
+                    # بررسی نوع پیام - هرکدام در ترد جدا، تا پردازش ویس (که چند ثانیه طول می‌کشد)
+                    # بقیه‌ی کاربران را پشت صف نگه ندارد
                     if 'voice' in message:
                         file_id = message['voice'].get('file_id')
                         message_id = message.get('message_id')
-                        self.handle_voice(chat_id, file_id, message_id)
+                        threading.Thread(target=self.handle_voice, args=(chat_id, file_id, message_id), daemon=True).start()
                     elif 'text' in message:
                         text = message['text']
-                        self.handle_text(chat_id, text)
-                
-                asyncio.sleep(1)
+                        threading.Thread(target=self.handle_text, args=(chat_id, text), daemon=True).start()
+
+                time.sleep(1)
             except KeyboardInterrupt:
                 print("\n👋 ربات متوقف شد.")
                 break
             except Exception as e:
                 print(f"خطا: {e}")
-                asyncio.sleep(5)
+                time.sleep(5)
 
 
 if __name__ == "__main__":

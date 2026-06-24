@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import asyncio
 import html
 import json
 import logging
@@ -172,7 +173,7 @@ async def process_voice(request: Request, voice: UploadFile = File(...)) -> dict
             shutil.copyfileobj(voice.file, buffer)
 
         try:
-            data, transcript = voice_handler.voice_to_voucher(temp_path)
+            data, transcript = await asyncio.to_thread(voice_handler.voice_to_voucher, temp_path)
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)

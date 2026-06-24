@@ -462,7 +462,7 @@ class TelegramBot:
             file_path = f"voice_files/{update.message.message_id}.ogg"
             await voice_file.download_to_drive(file_path)
 
-            data, transcript = self.voice_handler.voice_to_voucher(file_path)
+            data, transcript = await asyncio.to_thread(self.voice_handler.voice_to_voucher, file_path)
 
             if data["type"] and data["amount"] > 0:
                 entry_id = self.engine.create_voucher(
