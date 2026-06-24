@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>پنل مدیریت | حسابدار هوشمند</title>
+<link id="faviconLink" rel="icon" href="">
 <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; font-family: inherit; }
@@ -507,6 +508,9 @@ document.getElementById('aiTestBtn').addEventListener('click', async () => {
 });
 
 loadUsers();
+fetch('/platform-info').then(r => r.json()).then(info => {
+    if (info.logo_url) document.getElementById('faviconLink').href = info.logo_url;
+}).catch(() => {});
 </script>
 </body>
 </html>

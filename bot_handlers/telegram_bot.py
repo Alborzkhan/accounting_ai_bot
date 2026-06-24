@@ -402,7 +402,7 @@ class TelegramBot:
                 f"📊 بستانکار: {self.get_account_name(result['credit_account'])}"
             )
             await self.send_notification_if_needed(update, user_id)
-        elif result.get("type") == "general":
+        elif result.get("type") in ("general", "greeting"):
             await update.message.reply_text(result["message"])
         else:
             await self._process_rule_based(update, context, user_id, text)
