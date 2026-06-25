@@ -72,8 +72,10 @@ class InvoicePDF:
         is_official = bool(getattr(invoice, 'is_official', False)) if invoice else False
         if document_type == "purchase":
             title = "فاکتور رسمی خرید" if is_official else "فاکتور خرید"
+        elif document_type == "proforma":
+            title = "پیش‌فاکتور رسمی" if is_official else "پیش‌فاکتور"
         else:
-            title = "فاکتور رسمی فروش" if is_official else "پیش‌فاکتور"
+            title = "فاکتور رسمی فروش" if is_official else "فاکتور فروش"
         story.append(Paragraph(title, title_style))
         story.append(Spacer(1, 0.5*cm))
 

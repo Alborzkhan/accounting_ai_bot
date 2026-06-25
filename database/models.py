@@ -30,6 +30,7 @@ class Account(Base):
 class Customer(Base):
     __tablename__ = 'customers'
     id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=True)
     name = Column(String(100), nullable=False)
     phone = Column(String(20))  # تلفن ثابت
     mobile = Column(String(20))  # موبایل
@@ -42,8 +43,12 @@ class Customer(Base):
 class Vendor(Base):
     __tablename__ = 'vendors'
     id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=True)
     name = Column(String(100), nullable=False)
     phone = Column(String(20))
+    mobile = Column(String(20))
+    national_id = Column(String(20))
+    address = Column(String(300))
     economic_code = Column(String(20))
     created_at = Column(DateTime, default=datetime.now)
 
@@ -244,6 +249,15 @@ def init_db(db_path="accounting.db"):
     ])
     _ensure_columns(engine, "transactions", [
         ("discount_code", "VARCHAR(30)"),
+    ])
+    _ensure_columns(engine, "vendors", [
+        ("mobile", "VARCHAR(20)"),
+        ("national_id", "VARCHAR(20)"),
+        ("address", "VARCHAR(300)"),
+        ("user_id", "INTEGER"),
+    ])
+    _ensure_columns(engine, "customers", [
+        ("user_id", "INTEGER"),
     ])
 
     Session = sessionmaker(bind=engine)

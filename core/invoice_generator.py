@@ -38,33 +38,60 @@ class InvoiceGenerator:
         finally:
             session.close()
 
-    def find_or_create_customer(self, name: str, mobile: str = "") -> int:
-        """جستجوی مشتری با نام، یا ایجاد مشتری جدید در صورت نیافتن (بدون نیاز اجباری به شماره تماس)."""
+    def find_or_create_customer(
+        self, name: str, mobile: str = "", user_id: Optional[int] = None,
+        national_id: str = "", economic_code: str = "", address: str = "",
+    ) -> int:
+        """جستجوی مشتری با نام (فقط در محدوده همین کاربر/کسب‌وکار)، یا ایجاد مشتری جدید در صورت نیافتن."""
         session = self.Session()
         try:
             name = (name or "نامشخص").strip() or "نامشخص"
-            query = session.query(Customer).filter(Customer.name == name)
-            if mobile:
-                query = query.filter(Customer.mobile == mobile)
-            customer = query.first()
+            customer = session.query(Customer).filter(Customer.user_id == user_id, Customer.name == name).first()
             if customer:
+                if mobile and not customer.mobile:
+                    customer.mobile = mobile
+                if national_id and not customer.national_id:
+                    customer.national_id = national_id
+                if economic_code and not customer.economic_code:
+                    customer.economic_code = economic_code
+                if address and not customer.address:
+                    customer.address = address
+                session.commit()
                 return customer.id
-            customer = Customer(name=name, mobile=mobile or "")
+            customer = Customer(
+                user_id=user_id, name=name, mobile=mobile or "",
+                national_id=national_id or "", economic_code=economic_code or "", address=address or "",
+            )
             session.add(customer)
             session.commit()
             return customer.id
         finally:
             session.close()
 
-    def find_or_create_vendor(self, name: str, economic_code: str = "") -> int:
-        """جستجوی فروشنده/تامین‌کننده با نام، یا ایجاد جدید در صورت نیافتن."""
+    def find_or_create_vendor(
+        self, name: str, economic_code: str = "", user_id: Optional[int] = None,
+        mobile: str = "", national_id: str = "", address: str = "",
+    ) -> int:
+        """جستجوی فروشنده/تامین‌کننده با نام (فقط در محدوده همین کاربر/کسب‌وکار)، یا ایجاد جدید در صورت نیافتن."""
         session = self.Session()
         try:
             name = (name or "نامشخص").strip() or "نامشخص"
-            vendor = session.query(Vendor).filter(Vendor.name == name).first()
+            vendor = session.query(Vendor).filter(Vendor.user_id == user_id, Vendor.name == name).first()
             if vendor:
+                if mobile and not vendor.mobile:
+                    vendor.mobile = mobile
+                if national_id and not vendor.national_id:
+                    vendor.national_id = national_id
+                if economic_code and not vendor.economic_code:
+                    vendor.economic_code = economic_code
+                if address and not vendor.address:
+                    vendor.address = address
+                session.commit()
                 return vendor.id
-            vendor = Vendor(name=name, economic_code=economic_code or "")
+            vendor = Vendor(
+                user_id=user_id, name=name, economic_code=economic_code or "",
+                mobile=mobile or "", national_id=national_id or "", address=address or "",
+            )
             session.add(vendor)
             session.commit()
             return vendor.id
@@ -232,6 +259,7 @@ class InvoiceGenerator:
 
             session.commit()
 
+            doc_label = {"purchase": "فاکتور خرید", "proforma": "پیش‌فاکتور"}.get(document_type, "فاکتور فروش")
             return {
                 "success": True,
                 "invoice_id": invoice.id,
@@ -239,7 +267,7 @@ class InvoiceGenerator:
                 "subtotal": subtotal,
                 "vat_amount": vat_amount,
                 "total": total,
-                "message": f"✅ {'فاکتور' if document_type == 'purchase' else 'پیش‌فاکتور'} شماره {invoice.invoice_number} با موفقیت ایجاد شد."
+                "message": f"✅ {doc_label} شماره {invoice.invoice_number} با موفقیت ایجاد شد."
             }
 
         except Exception as e:

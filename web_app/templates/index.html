@@ -353,6 +353,7 @@
             background: rgba(255, 255, 255, 0.92) !important;
             border-radius: 28px 28px 0 0; padding: 24px 20px 32px; z-index: 1100;
             display: none; animation: slideUp 0.25s ease;
+            max-height: 85vh; overflow-y: auto;
         }
         .voucher-modal.active, .voice-modal.active, .sheet.active { display: block; }
 
@@ -380,6 +381,12 @@
         .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: rgba(255,255,255,0.5); border-radius: var(--radius-sm); margin-bottom: 12px; }
         .invoice-line { display: grid; grid-template-columns: 2.2fr 1fr 1fr 28px; gap: 8px; margin-bottom: 8px; align-items: center; }
         .invoice-line input { padding: 9px 10px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.85); font-family: inherit; font-size: 13px; }
+
+        .invoice-item-card { background: rgba(255,255,255,0.4); border-radius: 14px; padding: 10px; margin-bottom: 8px; }
+        .invoice-item-card .item-desc-row { display: flex; gap: 6px; margin-bottom: 6px; }
+        .invoice-item-card .item-desc-row input { flex: 1; min-width: 0; }
+        .invoice-item-card .item-nums-row { display: grid; grid-template-columns: 1fr 0.8fr 1.2fr; gap: 6px; }
+        .invoice-item-card input { width: 100%; padding: 9px 8px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.85); font-family: inherit; font-size: 13px; box-sizing: border-box; min-width: 0; }
         .line-remove { background: none; border: none; color: var(--expense); font-size: 18px; cursor: pointer; }
 
         @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -529,7 +536,7 @@
     <div class="voice-control">
         <div class="voice-small-btn" id="bigMicIcon"><span class="mic-icon-new"></span> ضبط صدا</div>
     </div>
-    <p style="text-align:center; margin:16px 0;" id="voiceStatusText">دکمه را نگه دارید و صحبت کنید</p>
+    <p style="text-align:center; margin:16px 0;" id="voiceStatusText">روی دکمه بزنید و صحبت کنید، دوباره بزنید تا متوقف شود</p>
     <button class="modal-btn" id="closeVoiceBtn">بستن</button>
 </div>
 
@@ -623,12 +630,19 @@
     <div id="invoiceStepReview" style="display:none;">
         <div class="form-row">
             <label>نوع سند</label>
-            <select id="reviewDocType"><option value="sale">فروش / پیش‌فاکتور</option><option value="purchase">خرید</option></select>
+            <select id="reviewDocType"><option value="sale">فاکتور فروش</option><option value="proforma">پیش‌فاکتور</option><option value="purchase">فاکتور خرید</option></select>
         </div>
-        <div class="form-row"><label>نام طرف حساب</label><input id="reviewPartyName" type="text"></div>
+        <div class="form-row"><label>نام طرف حساب</label><input id="reviewPartyName" type="text" autocomplete="off"></div>
+        <div id="partyMatchBox" style="display:none; font-size:12.5px; background:rgba(255,255,255,0.5); border-radius:12px; padding:10px; margin-bottom:10px;"></div>
         <div class="form-row"><label>موبایل (اختیاری)</label><input id="reviewPartyMobile" type="text" dir="ltr"></div>
+        <div class="form-grid-2">
+            <div class="form-row"><label>کد ملی (اختیاری)</label><input id="reviewPartyNationalId" type="text" dir="ltr"></div>
+            <div class="form-row"><label>کد اقتصادی (اختیاری)</label><input id="reviewPartyEconomicCode" type="text" dir="ltr"></div>
+        </div>
+        <div class="form-row"><label>آدرس (اختیاری)</label><input id="reviewPartyAddress" type="text"></div>
 
         <label class="field-label">اقلام فاکتور</label>
+        <datalist id="itemSuggestionsList"></datalist>
         <div id="reviewItemsList"></div>
         <button class="modal-btn" type="button" id="addItemLineBtn" style="margin-bottom:10px;">+ افزودن قلم</button>
 
@@ -672,6 +686,17 @@
         هر وقت خواستید، از «پروفایل» می‌تونید اطلاعات کسب‌وکارتون رو کامل کنید.
     </div>
     <button class="modal-btn" id="closeWelcomeGuideBtn">بزن بریم 🚀</button>
+</div>
+
+<div id="pricingSheet" class="sheet" style="max-width:480px;">
+    <div class="modal-title">اشتراک من</div>
+    <div id="pricingLicenseInfo" class="profile-info">در حال بارگذاری...</div>
+    <div class="form-row">
+        <label>کد تخفیف (اختیاری)</label>
+        <input id="pricingDiscountInput" type="text" dir="ltr" placeholder="کد تخفیف خود را وارد کنید">
+    </div>
+    <div id="pricingPlansList"></div>
+    <button class="modal-btn" id="closePricingBtn">بستن</button>
 </div>
 
 <div id="reportsSheet" class="sheet" style="max-width:480px;">
@@ -813,6 +838,7 @@
 <div id="toastMsg" class="toast-message"></div>
 
 <script>
+    function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
     function showToast(message, isError = false) {
         const toast = document.getElementById('toastMsg');
         toast.textContent = message;
@@ -1171,7 +1197,7 @@
         const micBtn = document.getElementById('bigMicIcon');
         micBtn.classList.add('recording');
         micBtn.innerHTML = '<span class="mic-icon-new"></span> در حال ضبط...';
-        document.getElementById('voiceStatusText').innerHTML = '🔴 در حال ضبط ... رها کنید';
+        document.getElementById('voiceStatusText').innerHTML = '🔴 در حال ضبط ... دوباره بزنید تا متوقف شود';
     }
 
     function stopVoiceRec() {
@@ -1183,27 +1209,49 @@
         setTimeout(() => closeVoiceModal(), 600);
     }
 
+    /* ضبط با تپ (نه نگه‌داشتن) — چون دیالوگ مجوز میکروفون توی مینی‌اپ تلگرام، حرکت لمسی نگه‌داشته‌شده را قطع می‌کند */
+    let isVoiceRecording = false;
+    async function toggleVoiceRec() {
+        if (isVoiceRecording) {
+            isVoiceRecording = false;
+            stopVoiceRec();
+            return;
+        }
+        isVoiceRecording = true;
+        openVoiceModal();
+        document.getElementById('voiceStatusText').innerHTML = 'در انتظار اجازه دسترسی به میکروفون...';
+        try {
+            await startVoiceRec();
+        } catch (e) {
+            isVoiceRecording = false;
+            showToast('دسترسی به میکروفون ممکن نشد. اجازه دسترسی را بررسی کنید.', true);
+            closeVoiceModal();
+        }
+    }
+
     function openVoiceModal() {
         document.getElementById('overlay').classList.add('active');
         document.getElementById('voiceModal').classList.add('active');
     }
 
     function closeVoiceModal() {
+        isVoiceRecording = false;
         if (mediaRec && mediaRec.state === 'recording') mediaRec.stop();
         document.getElementById('overlay').classList.remove('active');
         document.getElementById('voiceModal').classList.remove('active');
         const micBtn = document.getElementById('bigMicIcon');
         micBtn.classList.remove('recording');
         micBtn.innerHTML = '<span class="mic-icon-new"></span> ضبط صدا';
-        document.getElementById('voiceStatusText').innerHTML = 'دکمه را نگه دارید و صحبت کنید';
+        document.getElementById('voiceStatusText').innerHTML = 'روی دکمه بزنید و صحبت کنید، دوباره بزنید تا متوقف شود';
     }
 
     const voiceBtnMain = document.getElementById('voiceMainBtn');
-    voiceBtnMain.addEventListener('mousedown', () => { openVoiceModal(); startVoiceRec(); });
-    voiceBtnMain.addEventListener('mouseup', stopVoiceRec);
-    voiceBtnMain.addEventListener('touchstart', (e) => { e.preventDefault(); openVoiceModal(); startVoiceRec(); });
-    voiceBtnMain.addEventListener('touchend', (e) => { e.preventDefault(); stopVoiceRec(); });
-    document.getElementById('closeVoiceBtn').onclick = closeVoiceModal;
+    voiceBtnMain.addEventListener('click', toggleVoiceRec);
+    document.getElementById('bigMicIcon').addEventListener('click', toggleVoiceRec);
+    document.getElementById('closeVoiceBtn').onclick = () => {
+        isVoiceRecording = false;
+        if (mediaRec && mediaRec.state === 'recording') { stopVoiceRec(); } else { closeVoiceModal(); }
+    };
 
     /* ===================== جزئیات حساب ===================== */
     document.getElementById('closeDetailBtn').onclick = () => {
@@ -1378,19 +1426,45 @@
     document.getElementById('cancelInvoiceBtn').onclick = closeInvoiceSheet;
     document.getElementById('closeInvoiceDoneBtn').onclick = closeInvoiceSheet;
 
+    let itemSuggestions = [];
+    fetch('/invoice/item-suggestions').then(r => r.json()).then(res => {
+        if (res.success) {
+            itemSuggestions = res.data || [];
+            document.getElementById('itemSuggestionsList').innerHTML =
+                itemSuggestions.map(s => `<option value="${esc(s.description)}">`).join('');
+        }
+    }).catch(() => {});
+
     function renderInvoiceItems() {
         const c = document.getElementById('reviewItemsList');
         c.innerHTML = invoiceDraftItems.map((it, idx) => `
-            <div class="invoice-line">
-                <input data-idx="${idx}" data-field="description" value="${(it.description || '').replace(/"/g, '&quot;')}" placeholder="شرح کالا/خدمت">
-                <input data-idx="${idx}" data-field="quantity" type="number" value="${it.quantity}" placeholder="تعداد">
-                <input data-idx="${idx}" data-field="unit_price" type="number" value="${it.unit_price}" placeholder="قیمت واحد">
-                <button class="line-remove" type="button" data-idx="${idx}">×</button>
+            <div class="invoice-item-card">
+                <div class="item-desc-row">
+                    <input data-idx="${idx}" data-field="description" list="itemSuggestionsList" value="${(it.description || '').replace(/"/g, '&quot;')}" placeholder="شرح کالا/خدمت (با تایپ، از موجودی قبلی پیشنهاد می‌گیرد)">
+                    <button class="line-remove" type="button" data-idx="${idx}">×</button>
+                </div>
+                <div class="item-nums-row">
+                    <input data-idx="${idx}" data-field="quantity" type="number" value="${it.quantity}" placeholder="تعداد">
+                    <input data-idx="${idx}" data-field="unit" value="${(it.unit || 'عدد').replace(/"/g, '&quot;')}" placeholder="واحد">
+                    <input data-idx="${idx}" data-field="unit_price" type="number" value="${it.unit_price}" placeholder="قیمت واحد">
+                </div>
             </div>`).join('');
-        c.querySelectorAll('input').forEach(inp => {
+        c.querySelectorAll('input[data-field]').forEach(inp => {
             inp.addEventListener('input', () => {
                 const idx = +inp.dataset.idx, field = inp.dataset.field;
-                invoiceDraftItems[idx][field] = field === 'description' ? inp.value : (parseFloat(inp.value) || 0);
+                if (field === 'description' || field === 'unit') {
+                    invoiceDraftItems[idx][field] = inp.value;
+                } else {
+                    invoiceDraftItems[idx][field] = parseFloat(inp.value) || 0;
+                }
+                if (field === 'description') {
+                    const match = itemSuggestions.find(s => s.description === inp.value);
+                    if (match && (!invoiceDraftItems[idx].unit_price || invoiceDraftItems[idx].unit_price === 0)) {
+                        invoiceDraftItems[idx].unit = match.unit;
+                        invoiceDraftItems[idx].unit_price = match.unit_price;
+                        renderInvoiceItems();
+                    }
+                }
                 updateInvoiceTotalPreview();
             });
         });
@@ -1424,12 +1498,62 @@
     };
     document.getElementById('reviewVatRate').oninput = updateInvoiceTotalPreview;
 
+    /* ===================== جستجوی مشتری/فروشنده با نام مشابه ===================== */
+    function fillPartyFields(p) {
+        document.getElementById('reviewPartyMobile').value = p.mobile || '';
+        document.getElementById('reviewPartyNationalId').value = p.national_id || '';
+        document.getElementById('reviewPartyEconomicCode').value = p.economic_code || '';
+        document.getElementById('reviewPartyAddress').value = p.address || '';
+    }
+    let partyLookupTimer = null;
+    document.getElementById('reviewPartyName').addEventListener('input', (e) => {
+        const box = document.getElementById('partyMatchBox');
+        const name = e.target.value.trim();
+        clearTimeout(partyLookupTimer);
+        if (name.length < 2) { box.style.display = 'none'; return; }
+        partyLookupTimer = setTimeout(async () => {
+            const partyType = document.getElementById('reviewDocType').value === 'purchase' ? 'vendor' : 'customer';
+            try {
+                const res = await fetch(`/invoice/party-lookup?name=${encodeURIComponent(name)}&party_type=${partyType}`);
+                const data = await res.json();
+                const matches = data.data || [];
+                if (!matches.length) { box.style.display = 'none'; return; }
+                const exact = matches.filter(m => m.name === name);
+                if (exact.length === 1 && matches.length === 1) {
+                    fillPartyFields(exact[0]);
+                    box.style.display = 'block';
+                    box.innerHTML = `✅ این طرف‌حساب قبلاً ثبت شده بود، اطلاعاتش خودکار پر شد.`;
+                    return;
+                }
+                box.style.display = 'block';
+                box.innerHTML = '⚠️ تشابه اسمی پیدا شد. اگر یکی از این‌هاست انتخاب کنید، وگرنه «فرد جدید است» را بزنید:<br>' +
+                    matches.map((m, i) => `
+                        <div style="margin-top:6px;padding:6px;background:rgba(255,255,255,0.5);border-radius:8px;">
+                            <b>${esc(m.name)}</b> — ${esc(m.mobile || m.address || 'بدون اطلاعات بیشتر')}
+                            <button type="button" class="modal-btn" style="padding:4px 10px;margin-right:6px;" data-pick="${i}">همین است</button>
+                        </div>`).join('') +
+                    `<button type="button" class="modal-btn" style="margin-top:6px;" id="partyNewPersonBtn">فرد جدیدی است، تشابه اسمی است</button>`;
+                box.querySelectorAll('button[data-pick]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        fillPartyFields(matches[+btn.dataset.pick]);
+                        box.style.display = 'none';
+                    });
+                });
+                document.getElementById('partyNewPersonBtn').onclick = () => { box.style.display = 'none'; };
+            } catch (e) { box.style.display = 'none'; }
+        }, 450);
+    });
+
     function showInvoiceReview(draft) {
         document.getElementById('invoiceStepInput').style.display = 'none';
         document.getElementById('invoiceStepReview').style.display = 'block';
         document.getElementById('reviewDocType').value = draft.document_type || 'sale';
         document.getElementById('reviewPartyName').value = draft.party_name || '';
         document.getElementById('reviewPartyMobile').value = draft.party_mobile || '';
+        document.getElementById('reviewPartyNationalId').value = '';
+        document.getElementById('reviewPartyEconomicCode').value = '';
+        document.getElementById('reviewPartyAddress').value = '';
+        document.getElementById('partyMatchBox').style.display = 'none';
         document.getElementById('reviewIsOfficial').checked = !!draft.is_official;
         document.getElementById('vatRateRow').style.display = draft.is_official ? 'block' : 'none';
         document.getElementById('reviewVatRate').value = draft.vat_rate || 9;
@@ -1491,11 +1615,24 @@
         if (invMediaRec && invMediaRec.state === 'recording') invMediaRec.stop();
         document.getElementById('invoiceMicBtn').classList.remove('recording');
     }
+    /* تپ به‌جای نگه‌داشتن - همان دلیل فرمان صوتی اصلی */
+    let isInvoiceRecording = false;
+    async function toggleInvoiceVoiceRec() {
+        if (isInvoiceRecording) {
+            isInvoiceRecording = false;
+            stopInvoiceVoiceRec();
+            return;
+        }
+        isInvoiceRecording = true;
+        try {
+            await startInvoiceVoiceRec();
+        } catch (e) {
+            isInvoiceRecording = false;
+            showToast('دسترسی به میکروفون ممکن نشد. اجازه دسترسی را بررسی کنید.', true);
+        }
+    }
     const invoiceMicBtn = document.getElementById('invoiceMicBtn');
-    invoiceMicBtn.addEventListener('mousedown', startInvoiceVoiceRec);
-    invoiceMicBtn.addEventListener('mouseup', stopInvoiceVoiceRec);
-    invoiceMicBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startInvoiceVoiceRec(); });
-    invoiceMicBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopInvoiceVoiceRec(); });
+    invoiceMicBtn.addEventListener('click', toggleInvoiceVoiceRec);
 
     document.getElementById('backToInvoiceInputBtn').onclick = () => {
         document.getElementById('invoiceStepReview').style.display = 'none';
@@ -1515,6 +1652,9 @@
             document_type: document.getElementById('reviewDocType').value,
             party_name: partyName,
             party_mobile: document.getElementById('reviewPartyMobile').value.trim(),
+            buyer_national_id: document.getElementById('reviewPartyNationalId').value.trim(),
+            buyer_economic_code: document.getElementById('reviewPartyEconomicCode').value.trim(),
+            party_address: document.getElementById('reviewPartyAddress').value.trim(),
             is_official: document.getElementById('reviewIsOfficial').checked,
             vat_rate: parseFloat(document.getElementById('reviewVatRate').value) || 0,
             items: validItems,
@@ -1625,6 +1765,54 @@
         document.getElementById('welcomeGuideSheet').classList.remove('active');
     }
     document.getElementById('closeWelcomeGuideBtn').onclick = closeWelcomeGuideSheet;
+
+    /* ===================== اشتراک من ===================== */
+    function openPricingSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('pricingSheet').classList.add('active');
+        const info = document.getElementById('pricingLicenseInfo');
+        info.textContent = 'در حال بارگذاری...';
+        fetch('/license_status').then(r => r.json()).then(data => {
+            if (data.is_valid) {
+                info.innerHTML = `وضعیت اشتراک: <b>فعال</b><br>پلن: ${data.plan_type || '—'}<br>اعتبار تا: ${data.end_date || '—'}<br>${data.message || ''}`;
+            } else {
+                info.innerHTML = data.message || 'وضعیت اشتراک نامشخص است.';
+            }
+        }).catch(() => { info.textContent = 'خطا در دریافت وضعیت حساب.'; });
+
+        const list = document.getElementById('pricingPlansList');
+        list.innerHTML = 'در حال بارگذاری پلن‌ها...';
+        fetch('/pricing-plans-data').then(r => r.json()).then(({ data: plans }) => {
+            let html = '';
+            Object.entries(plans || {}).forEach(([key, plan]) => {
+                if (key === 'free_trial') {
+                    html += `<div class="form-row" style="background:rgba(255,255,255,0.4);border-radius:14px;padding:12px;margin-bottom:10px;">
+                        <b>🎁 ${esc(plan.name)}</b><br>${esc(plan.description)}
+                    </div>`;
+                } else {
+                    html += `<div class="form-row" style="background:rgba(255,255,255,0.4);border-radius:14px;padding:12px;margin-bottom:10px;">
+                        <b>💰 ${esc(plan.name)}</b> — ${plan.price.toLocaleString()} تومان<br>
+                        <span style="font-size:12.5px;color:#667;">${esc(plan.description)}</span>
+                        <button class="modal-btn modal-btn-primary" style="margin-top:8px;" data-plan="${key}">خرید اشتراک</button>
+                    </div>`;
+                }
+            });
+            list.innerHTML = html || 'پلنی یافت نشد.';
+            list.querySelectorAll('button[data-plan]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const code = document.getElementById('pricingDiscountInput').value.trim();
+                    const url = code ? `/payment/${btn.dataset.plan}?discount_code=${encodeURIComponent(code)}` : `/payment/${btn.dataset.plan}`;
+                    location.href = url;
+                });
+            });
+        }).catch(() => { list.innerHTML = 'خطا در دریافت پلن‌ها.'; });
+    }
+    function closePricingSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('pricingSheet').classList.remove('active');
+    }
+    document.getElementById('pricingTile').onclick = openPricingSheet;
+    document.getElementById('closePricingBtn').onclick = closePricingSheet;
 
     /* ===================== برندینگ پلتفرم (لوگوی صاحب اپ) ===================== */
     fetch('/platform-info').then(r => r.json()).then(info => {
@@ -1898,7 +2086,7 @@
         });
     }
 
-    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet(); closeWelcomeGuideSheet(); });
+    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet(); closeWelcomeGuideSheet(); closePricingSheet(); });
 
     /* ===================== مینی‌اپ تلگرام: دکمه بازگشت بومی ===================== */
     function isAnySheetOpen() {
@@ -1908,7 +2096,7 @@
     function closeAllSheets() {
         closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet();
         closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet();
-        closeWelcomeGuideSheet();
+        closeWelcomeGuideSheet(); closePricingSheet();
         if (document.getElementById('detailPage').classList.contains('active')) {
             document.getElementById('closeDetailBtn').click();
         }

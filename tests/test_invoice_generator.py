@@ -22,6 +22,33 @@ class TestCustomerVendorDedup:
         id2 = invoice_gen.find_or_create_vendor("تامین‌کننده الف")
         assert id1 == id2
 
+    def test_same_customer_name_does_not_leak_across_users(self, invoice_gen):
+        """رگرسیون: قبلاً find_or_create_customer هیچ فیلتر user_id نداشت، پس دو کاربر مختلف
+        با مشتری هم‌نام، روی یک ردیف دیتابیس مشترک می‌شدند (نشت اطلاعات بین کسب‌وکارها)."""
+        id1 = invoice_gen.find_or_create_customer("علی کریمی", "09121111111", user_id=1)
+        id2 = invoice_gen.find_or_create_customer("علی کریمی", "09122222222", user_id=2)
+        assert id1 != id2
+
+    def test_same_vendor_name_does_not_leak_across_users(self, invoice_gen):
+        id1 = invoice_gen.find_or_create_vendor("تامین‌کننده الف", user_id=1)
+        id2 = invoice_gen.find_or_create_vendor("تامین‌کننده الف", user_id=2)
+        assert id1 != id2
+
+    def test_customer_lookup_fills_blank_fields_without_overwriting(self, invoice_gen):
+        cid = invoice_gen.find_or_create_customer("علی کریمی", user_id=1, national_id="1234567890")
+        cid2 = invoice_gen.find_or_create_customer(
+            "علی کریمی", user_id=1, national_id="0000000000", economic_code="999",
+        )
+        assert cid == cid2
+        session = invoice_gen.Session()
+        try:
+            from database.models import Customer
+            customer = session.query(Customer).filter_by(id=cid).first()
+            assert customer.national_id == "1234567890"
+            assert customer.economic_code == "999"
+        finally:
+            session.close()
+
 
 class TestCreateInvoice:
     def test_create_invoice_computes_totals(self, invoice_gen):

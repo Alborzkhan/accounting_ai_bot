@@ -118,6 +118,11 @@ async def platform_info() -> dict:
         "support_sales_telegram": settings.get("support_sales_telegram", ""),
     }
 
+# پلن‌های قیمتی (برای شیت «اشتراک من» داخل مینی‌اپ - بدون نویگیشن واقعی صفحه)
+@app.get("/pricing-plans-data")
+async def pricing_plans_data() -> dict:
+    return {"data": license_manager.get_pricing_plans()}
+
 # سرویس وضعیت لایسنس
 @app.get("/license_status")
 async def license_status(request: Request) -> dict:
@@ -606,7 +611,7 @@ async def invoice_confirm(request: Request) -> dict:
     except Exception:
         return {"success": False, "message": "درخواست نامعتبر است."}
 
-    document_type = payload.get("document_type") if payload.get("document_type") in ("sale", "purchase") else "sale"
+    document_type = payload.get("document_type") if payload.get("document_type") in ("sale", "proforma", "purchase") else "sale"
     party_name = (payload.get("party_name") or "").strip()
     party_mobile = (payload.get("party_mobile") or "").strip()
     is_official = bool(payload.get("is_official", False))
@@ -615,6 +620,7 @@ async def invoice_confirm(request: Request) -> dict:
     description = (payload.get("description") or "").strip()
     buyer_national_id = (payload.get("buyer_national_id") or "").strip()
     buyer_economic_code = (payload.get("buyer_economic_code") or "").strip()
+    party_address = (payload.get("party_address") or "").strip()
 
     if not party_name:
         return {"success": False, "message": "نام طرف حساب (مشتری/فروشنده) را وارد کنید."}
@@ -651,7 +657,10 @@ async def invoice_confirm(request: Request) -> dict:
                 }
 
         if document_type == "purchase":
-            party_id = invoice_generator.find_or_create_vendor(party_name, buyer_economic_code)
+            party_id = invoice_generator.find_or_create_vendor(
+                party_name, buyer_economic_code, user_id=user_id,
+                mobile=party_mobile, national_id=buyer_national_id, address=party_address,
+            )
             result = invoice_generator.create_purchase_invoice(
                 vendor_id=party_id,
                 items=cleaned_items,
@@ -663,7 +672,10 @@ async def invoice_confirm(request: Request) -> dict:
                 vendor_economic_code=buyer_economic_code,
             )
         else:
-            party_id = invoice_generator.find_or_create_customer(party_name, party_mobile)
+            party_id = invoice_generator.find_or_create_customer(
+                party_name, party_mobile, user_id=user_id, national_id=buyer_national_id,
+                economic_code=buyer_economic_code, address=party_address,
+            )
             result = invoice_generator.create_invoice(
                 customer_id=party_id,
                 items=cleaned_items,
@@ -703,7 +715,7 @@ async def invoice_confirm(request: Request) -> dict:
         else:
             invoice_data = invoice_generator.get_invoice(result["invoice_id"], user_id=user_id)
             invoice_data["seller"] = seller
-            invoice_pdf_maker.create_invoice_pdf(invoice_data, pdf_path, document_type="sale")
+            invoice_pdf_maker.create_invoice_pdf(invoice_data, pdf_path, document_type=document_type)
             invoice_generator.set_pdf_path(result["invoice_id"], pdf_path)
             result["pdf_url"] = f"/invoice/{result['invoice_id']}/pdf"
         return result
@@ -724,6 +736,56 @@ async def invoice_get_pdf(request: Request, invoice_id: int, type: str = "sale")
     if not data or not data["invoice"].pdf_path or not os.path.exists(data["invoice"].pdf_path):
         return JSONResponse({"success": False, "message": "فاکتور یافت نشد."}, status_code=404)
     return FileResponse(data["invoice"].pdf_path, media_type="application/pdf", filename=f"{data['invoice'].invoice_number}.pdf")
+
+
+@app.get("/invoice/party-lookup")
+async def invoice_party_lookup(request: Request, name: str = "", party_type: str = "customer") -> dict:
+    """جستجوی مشتری/فروشنده با نام مشابه، فقط در محدوده همین کاربر - برای پیشنهاد خودکار اطلاعات و هشدار تشابه اسمی."""
+    user_id = get_user_id(request)
+    name = (name or "").strip()
+    if not user_id or len(name) < 2:
+        return {"success": True, "data": []}
+    from database.models import Customer, Vendor
+    session = engine.Session()
+    try:
+        if party_type == "vendor":
+            rows = session.query(Vendor).filter(Vendor.user_id == user_id, Vendor.name.like(f"%{name}%")).limit(5).all()
+        else:
+            rows = session.query(Customer).filter(Customer.user_id == user_id, Customer.name.like(f"%{name}%")).limit(5).all()
+        data = [{
+            "id": r.id, "name": r.name,
+            "mobile": getattr(r, "mobile", "") or "",
+            "national_id": r.national_id or "",
+            "economic_code": r.economic_code or "",
+            "address": getattr(r, "address", "") or "",
+        } for r in rows]
+        return {"success": True, "data": data}
+    finally:
+        session.close()
+
+
+@app.get("/invoice/item-suggestions")
+async def invoice_item_suggestions(request: Request) -> dict:
+    """آخرین آیتم‌های فاکتور/خریدی که این کاربر قبلاً ثبت کرده - برای پیشنهاد خودکار شرح کالا/واحد/قیمت."""
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "data": []}
+    from database.models import InvoiceItem, ProformaInvoice, PurchaseItem, PurchaseInvoice
+    session = engine.Session()
+    try:
+        sale_rows = session.query(InvoiceItem).join(
+            ProformaInvoice, InvoiceItem.invoice_id == ProformaInvoice.id
+        ).filter(ProformaInvoice.user_id == user_id).order_by(InvoiceItem.id.desc()).limit(200).all()
+        purchase_rows = session.query(PurchaseItem).join(
+            PurchaseInvoice, PurchaseItem.purchase_invoice_id == PurchaseInvoice.id
+        ).filter(PurchaseInvoice.user_id == user_id).order_by(PurchaseItem.id.desc()).limit(200).all()
+        seen = {}
+        for row in [*sale_rows, *purchase_rows]:
+            if row.description not in seen:
+                seen[row.description] = {"description": row.description, "unit": row.unit, "unit_price": row.unit_price}
+        return {"success": True, "data": list(seen.values())[:100]}
+    finally:
+        session.close()
 
 
 @app.get("/invoice/list")
