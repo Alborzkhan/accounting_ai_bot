@@ -665,7 +665,7 @@
 
     <div id="invoiceStepDone" style="display:none;">
         <p id="invoiceDoneMessage" style="margin-bottom:14px;"></p>
-        <a id="invoicePdfLink" href="#" target="_blank" class="modal-btn modal-btn-primary" style="display:block;text-align:center;text-decoration:none;margin-bottom:10px;">دانلود PDF فاکتور</a>
+        <button type="button" id="invoicePdfLink" class="modal-btn modal-btn-primary" style="display:block;width:100%;margin-bottom:10px;">دانلود PDF فاکتور</button>
         <button class="modal-btn" id="closeInvoiceDoneBtn">بستن</button>
     </div>
 </div>
@@ -839,6 +839,24 @@
 
 <script>
     function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+    async function downloadFileBlob(url, filename) {
+        try {
+            const res = await fetch(url, { credentials: 'same-origin' });
+            if (!res.ok) { showToast('دانلود فایل ناموفق بود.', true); return; }
+            const blob = await res.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename || 'file.pdf';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+        } catch (e) {
+            showToast('دانلود فایل ناموفق بود.', true);
+        }
+    }
     function showToast(message, isError = false) {
         const toast = document.getElementById('toastMsg');
         toast.textContent = message;
@@ -1634,6 +1652,11 @@
     const invoiceMicBtn = document.getElementById('invoiceMicBtn');
     invoiceMicBtn.addEventListener('click', toggleInvoiceVoiceRec);
 
+    document.getElementById('invoicePdfLink').addEventListener('click', (e) => {
+        const url = e.target.dataset.url;
+        if (url) downloadFileBlob(url, e.target.dataset.filename);
+    });
+
     document.getElementById('backToInvoiceInputBtn').onclick = () => {
         document.getElementById('invoiceStepReview').style.display = 'none';
         document.getElementById('invoiceStepInput').style.display = 'block';
@@ -1673,7 +1696,8 @@
                 document.getElementById('invoiceStepReview').style.display = 'none';
                 document.getElementById('invoiceStepDone').style.display = 'block';
                 document.getElementById('invoiceDoneMessage').textContent = data.message;
-                document.getElementById('invoicePdfLink').href = data.pdf_url;
+                document.getElementById('invoicePdfLink').dataset.url = data.pdf_url;
+                document.getElementById('invoicePdfLink').dataset.filename = `${data.invoice_number || 'invoice'}.pdf`;
             } else if (data.warning) {
                 pendingForceConfirm = true;
                 warnBox.style.display = 'block';
@@ -1908,9 +1932,19 @@
                 const invs = json.data || [];
                 const totalSum = invs.reduce((s, i) => s + (i.total || 0), 0);
                 summary.textContent = `تعداد فاکتور: ${invs.length} | جمع فروش: ${totalSum.toLocaleString()} تومان`;
+                const typeLabel = { sale: 'فروش', proforma: 'پیش‌فاکتور' };
                 table.innerHTML = invs.length
-                    ? invs.map(i => `<div class="sub-detail-item"><span>${i.invoice_number} - ${i.customer_name}</span><span>${i.total.toLocaleString()} ت</span></div>`).join('')
+                    ? invs.map(i => `<div class="sub-detail-item invoice-row" data-pdf-url="/invoice/${i.id}/pdf" data-pdf-name="${esc(i.invoice_number)}.pdf">
+                        <span>${esc(i.invoice_number)} (${typeLabel[i.document_type] || 'فروش'}) - ${esc(i.customer_name)}</span>
+                        <span>${i.total.toLocaleString()} ت ${i.has_pdf ? '📄' : ''}</span>
+                      </div>`).join('')
                     : 'فاکتوری یافت نشد.';
+                table.querySelectorAll('.invoice-row').forEach(row => {
+                    if (row.querySelector('span:last-child').textContent.includes('📄')) {
+                        row.style.cursor = 'pointer';
+                        row.addEventListener('click', () => downloadFileBlob(row.dataset.pdfUrl, row.dataset.pdfName));
+                    }
+                });
                 renderReportChart('bar', invs.slice(0, 10).map(i => i.invoice_number), [{ label: 'مبلغ', data: invs.slice(0, 10).map(i => i.total), backgroundColor: '#1f9d6e' }]);
             } else if (type === 'purchase_invoices') {
                 const res = await fetch('/invoice/purchases');
@@ -1919,8 +1953,17 @@
                 const totalSum = invs.reduce((s, i) => s + (i.total || 0), 0);
                 summary.textContent = `تعداد فاکتور: ${invs.length} | جمع خرید: ${totalSum.toLocaleString()} تومان`;
                 table.innerHTML = invs.length
-                    ? invs.map(i => `<div class="sub-detail-item"><span>${i.invoice_number} - ${i.vendor_name}</span><span>${i.total.toLocaleString()} ت</span></div>`).join('')
+                    ? invs.map(i => `<div class="sub-detail-item invoice-row" data-pdf-url="/invoice/${i.id}/pdf?type=purchase" data-pdf-name="${esc(i.invoice_number)}.pdf">
+                        <span>${esc(i.invoice_number)} - ${esc(i.vendor_name)}</span>
+                        <span>${i.total.toLocaleString()} ت ${i.has_pdf ? '📄' : ''}</span>
+                      </div>`).join('')
                     : 'فاکتوری یافت نشد.';
+                table.querySelectorAll('.invoice-row').forEach(row => {
+                    if (row.querySelector('span:last-child').textContent.includes('📄')) {
+                        row.style.cursor = 'pointer';
+                        row.addEventListener('click', () => downloadFileBlob(row.dataset.pdfUrl, row.dataset.pdfName));
+                    }
+                });
                 renderReportChart('bar', invs.slice(0, 10).map(i => i.invoice_number), [{ label: 'مبلغ', data: invs.slice(0, 10).map(i => i.total), backgroundColor: '#d24545' }]);
             }
         } catch (e) {

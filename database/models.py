@@ -144,6 +144,7 @@ class ProformaInvoice(Base):
     total = Column(Float, default=0)
     is_vat_applied = Column(Boolean, default=True)
     is_official = Column(Boolean, default=False)
+    document_type = Column(String(20), default="sale")
     buyer_national_id = Column(String(30), nullable=True)
     buyer_economic_code = Column(String(30), nullable=True)
     description = Column(String(200))
@@ -246,6 +247,7 @@ def init_db(db_path="accounting.db"):
         ("is_official", "BOOLEAN DEFAULT 0"),
         ("buyer_national_id", "VARCHAR(30)"),
         ("buyer_economic_code", "VARCHAR(30)"),
+        ("document_type", "VARCHAR(20) DEFAULT 'sale'"),
     ])
     _ensure_columns(engine, "transactions", [
         ("discount_code", "VARCHAR(30)"),

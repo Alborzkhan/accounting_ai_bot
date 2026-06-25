@@ -239,6 +239,7 @@ class InvoiceGenerator:
                 total=total,
                 is_vat_applied=apply_vat,
                 is_official=apply_vat,
+                document_type=document_type,
                 buyer_national_id=buyer_national_id or None,
                 buyer_economic_code=buyer_economic_code or None,
                 description=description
@@ -302,6 +303,7 @@ class InvoiceGenerator:
                     "customer_name": customer.name if customer else "-",
                     "total": inv.total,
                     "is_official": inv.is_official,
+                    "document_type": inv.document_type or "sale",
                     "has_pdf": bool(inv.pdf_path),
                 })
             return result
