@@ -1204,12 +1204,22 @@
         mediaRec.onstop = async () => {
             const blob = new Blob(audioChunks, { type: 'audio/webm' });
             const fd = new FormData(); fd.append('voice', blob);
-            const resp = await fetch('/process_voice', { method: 'POST', body: fd });
-            const json = await resp.json();
-            showToast(msgOf(json, 'ثبت شد'), !json.success);
-            updateGross();
-            fetchAccounts();
-            stream.getTracks().forEach(t => t.stop());
+            const statusEl = document.getElementById('voiceStatusText');
+            try {
+                const resp = await fetch('/process_voice', { method: 'POST', body: fd });
+                const json = await resp.json();
+                const msg = msgOf(json, 'ثبت شد');
+                showToast(msg, !json.success);
+                statusEl.innerHTML = (json.success ? '✅ ' : '❌ ') + msg;
+                updateGross();
+                fetchAccounts();
+            } catch (e) {
+                statusEl.innerHTML = '❌ خطا در ارتباط با سرور. دوباره تلاش کنید.';
+                showToast('خطا در ارتباط با سرور.', true);
+            } finally {
+                stream.getTracks().forEach(t => t.stop());
+                setTimeout(() => closeVoiceModal(), 2500);
+            }
         };
         mediaRec.start();
         const micBtn = document.getElementById('bigMicIcon');
@@ -1223,8 +1233,7 @@
         const micBtn = document.getElementById('bigMicIcon');
         micBtn.classList.remove('recording');
         micBtn.innerHTML = '<span class="mic-icon-new"></span> ضبط صدا';
-        document.getElementById('voiceStatusText').innerHTML = 'در حال پردازش...';
-        setTimeout(() => closeVoiceModal(), 600);
+        document.getElementById('voiceStatusText').innerHTML = '⏳ در حال پردازش صدا، چند لحظه صبر کنید...';
     }
 
     /* ضبط با تپ (نه نگه‌داشتن) — چون دیالوگ مجوز میکروفون توی مینی‌اپ تلگرام، حرکت لمسی نگه‌داشته‌شده را قطع می‌کند */
