@@ -44,6 +44,43 @@ def test_request_otp_then_verify_with_wrong_code_fails(auth, monkeypatch):
     assert good["is_new"] is True
 
 
+def test_same_mobile_unifies_telegram_and_web_identity(auth, monkeypatch):
+    """رگرسیون: کاربری که از تلگرام ثبت‌نام کرده، با همون موبایل وارد وب‌اپ هم بشه باید همون حساب باشه،
+    نه یک کاربر جدید (قبلاً تلگرام/بله از موبایل ساختگی tg_/bale_ استفاده می‌کردند که این یکپارچگی را می‌شکست)."""
+    monkeypatch.setattr("core.auth.secrets.randbelow", lambda n: 111111)
+    auth.request_otp("09121234567")
+    tg_result = auth.verify_otp("09121234567", "111111", name="کاربر تلگرام")
+    assert tg_result["success"] is True
+    tg_user_id = tg_result["user_id"]
+
+    link = auth.link_telegram(tg_user_id, "555000111")
+    assert link["success"] is True
+
+    monkeypatch.setattr("core.auth.secrets.randbelow", lambda n: 222222)
+    monkeypatch.setattr("core.auth.OTP_RESEND_COOLDOWN_SECONDS", 0)
+    auth.request_otp("09121234567")
+    web_result = auth.verify_otp("09121234567", "222222")
+    assert web_result["success"] is True
+    assert web_result["user_id"] == tg_user_id
+    assert web_result["is_new"] is False
+
+    assert auth.get_user_by_telegram("555000111") == tg_user_id
+
+
+def test_link_telegram_rejects_id_already_used_by_another_user(auth, monkeypatch):
+    monkeypatch.setattr("core.auth.secrets.randbelow", lambda n: 333333)
+    auth.request_otp("09121111111")
+    user1 = auth.verify_otp("09121111111", "333333")["user_id"]
+    auth.link_telegram(user1, "777000888")
+
+    monkeypatch.setattr("core.auth.secrets.randbelow", lambda n: 444444)
+    auth.request_otp("09122222222")
+    user2 = auth.verify_otp("09122222222", "444444")["user_id"]
+
+    result = auth.link_telegram(user2, "777000888")
+    assert result["success"] is False
+
+
 def test_verify_otp_without_request_fails(auth):
     result = auth.verify_otp("09121234567", "123456")
     assert result["success"] is False

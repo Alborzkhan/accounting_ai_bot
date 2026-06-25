@@ -6,6 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.logging_config import setup_logging
 setup_logging()
 
+import re
 import threading
 import time
 from datetime import datetime
@@ -22,7 +23,7 @@ from typing import List, Optional, Dict, Any
 from core.auth import AuthManager
 from core.notifications import NotificationService
 from core.license_manager import LicenseManager
-from config import BALE_TOKEN, PUBLIC_APP_URL
+from config import BALE_TOKEN, get_public_app_url
 BASE_URL = f"https://tapi.bale.ai/bot{BALE_TOKEN}/"
 
 class BaleBot:
@@ -35,6 +36,126 @@ class BaleBot:
         self.notifier = NotificationService()
         self.license_manager = LicenseManager()
         self.last_update_id = 0
+        self.user_states: Dict[int, dict] = {}
+
+    def _normalize_mobile(self, raw: str) -> str:
+        persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+        arabic_digits = "٠١٢٣٤٥٦٧٨٩"
+        out = []
+        for ch in raw.strip():
+            if ch in persian_digits:
+                out.append(str(persian_digits.index(ch)))
+            elif ch in arabic_digits:
+                out.append(str(arabic_digits.index(ch)))
+            elif ch.isdigit():
+                out.append(ch)
+        digits = "".join(out)
+        if digits.startswith("98") and len(digits) == 12:
+            digits = "0" + digits[2:]
+        elif digits.startswith("9") and len(digits) == 10:
+            digits = "0" + digits
+        return digits
+
+    def _normalize_business_type(self, raw: str) -> str:
+        mapping = {
+            "اهن": "آهن‌آلات", "آهن": "آهن‌آلات", "فلز": "آهن‌آلات",
+            "بازرگانی": "بازرگانی عمومی", "بازرگانی عمومی": "بازرگانی عمومی",
+            "خدمات": "خدماتی", "خدماتی": "خدماتی",
+            "تولید": "تولیدی", "تولیدی": "تولیدی",
+            "پیمانکاری": "پیمانکاری",
+            "غذا": "مواد غذایی", "مواد غذایی": "مواد غذایی",
+            "لباس": "پوشاک", "پوشاک": "پوشاک",
+            "آرایش": "آرایشگاهی", "آرایشگاهی": "آرایشگاهی",
+        }
+        return mapping.get(raw.strip(), raw.strip())
+
+    def start_onboarding(self, chat_id: int) -> None:
+        self.user_states[chat_id] = {"state": "onboarding_name"}
+        self.send_message(
+            chat_id,
+            "سلام! 👋 من نارین هستم 🤖\n"
+            "حسابدار شخصی و هوشمند شما\n\n"
+            "به نظر میاد اولین باره که با من کار می‌کنی.\n"
+            "بیا اول ثبت نامت رو تکمیل کنیم.\n\n"
+            "❓ لطفاً نام و نام خانوادگی خودت رو بگو:"
+        )
+
+    def handle_onboarding(self, chat_id: int, text: str) -> None:
+        st = self.user_states.get(chat_id, {})
+        state = st.get("state")
+
+        if state == "onboarding_name":
+            st["reg_name"] = text.strip()
+            st["state"] = "onboarding_business_type"
+            self.send_message(
+                chat_id,
+                f"خوشحالم {st['reg_name']} جان! 😊\n\n"
+                "کسب و کارت تو چه زمینه‌ایه؟\n"
+                "مثلاً: بازرگانی عمومی، آهن‌آلات، آرایشگاهی، مواد غذایی، پوشاک، خدمات"
+            )
+
+        elif state == "onboarding_business_type":
+            st["reg_business_type"] = self._normalize_business_type(text)
+            st["state"] = "onboarding_business_name"
+            self.send_message(chat_id, "عالیه! اسم کسب و کارت چیه؟\nمثلاً: البرز فلز، شرکت آذر، فروشگاه بهار")
+
+        elif state == "onboarding_business_name":
+            st["reg_business_name"] = text.strip()
+            st["state"] = "onboarding_mobile"
+            self.send_message(
+                chat_id,
+                "تقریباً تمومه! یه چیز مهم بمونه:\n\n"
+                "📱 شماره موبایل واقعیت رو بگو (مثلاً 09121234567).\n"
+                "اینجوری اگه از تلگرام، بله یا وب‌اپ هم وارد بشی، حساب کاریت همینه و اطلاعاتت یکیه."
+            )
+
+        elif state == "onboarding_mobile":
+            mobile = self._normalize_mobile(text)
+            if not re.match(r'^09\d{9}$', mobile):
+                self.send_message(chat_id, "شماره موبایل معتبر نیست. لطفاً به شکل 09121234567 وارد کن:")
+                return
+            otp_result = self.auth_manager.request_otp(mobile)
+            if not otp_result.get("success"):
+                self.send_message(chat_id, f"❌ {otp_result.get('message')}")
+                return
+            st["reg_mobile"] = mobile
+            st["state"] = "onboarding_otp"
+            dev_code = otp_result.get("dev_code")
+            msg = f"یک کد تایید ۶ رقمی به شماره {mobile} پیامک شد. لطفاً همون کد رو بفرست:"
+            if dev_code:
+                msg += f"\n\n(حالت تست، چون پیامک واقعی وصل نیست: {dev_code})"
+            self.send_message(chat_id, msg)
+
+        elif state == "onboarding_otp":
+            code = "".join(ch for ch in text if ch.isdigit())
+            mobile = st.get("reg_mobile", "")
+            name = st.get("reg_name", "کاربر")
+            biz_type = st.get("reg_business_type", "بازرگانی عمومی")
+            biz_name = st.get("reg_business_name", "")
+            verify_result = self.auth_manager.verify_otp(mobile, code, name)
+            if not verify_result.get("success"):
+                self.send_message(chat_id, f"❌ {verify_result.get('message')}\nدوباره کد رو بفرست، یا با /start از اول شروع کن.")
+                return
+            user_id = verify_result["user_id"]
+            link_result = self.auth_manager.link_bale(user_id, str(chat_id))
+            if not link_result.get("success"):
+                self.send_message(chat_id, f"❌ {link_result.get('message')}")
+                self.user_states.pop(chat_id, None)
+                return
+            self.auth_manager.update_user_profile(user_id, business_type=biz_type, business_name=biz_name)
+            self.license_manager.generate_license_key(user_id, "free_trial")
+            self.user_states.pop(chat_id, None)
+            self.send_message(
+                chat_id,
+                f"✅ ثبت نام با موفقیت انجام شد!\n\n"
+                f"📋 خلاصه اطلاعات:\n"
+                f"نام: {name}\n"
+                f"موبایل: {mobile}\n"
+                f"کسب و کار: {biz_name} ({biz_type})\n\n"
+                f"یک لایسنس آزمایشی ۵۰ سندی برات فعال کردم.\n"
+                f"حالا می‌تونیم شروع کنیم!\n\n"
+                "💡 نکته: همین شماره موبایل رو می‌تونی برای ورود به وب‌اپ یا تلگرام هم استفاده کنی، حساب همینه."
+            )
     
     def send_message(self, chat_id: int, text: str, reply_markup: Optional[dict] = None) -> Optional[dict]:
         """ارسال پیام به کاربر"""
@@ -57,7 +178,7 @@ class BaleBot:
         """ارسال پیام همراه با دکمه‌ای که مینی‌اپ (وب‌اپ نارین) را باز می‌کند"""
         reply_markup = {
             "inline_keyboard": [[
-                {"text": "📱 برنامه نارین", "web_app": {"url": f"{PUBLIC_APP_URL}/app"}}
+                {"text": "📱 برنامه نارین", "web_app": {"url": f"{get_public_app_url()}/app"}}
             ]]
         }
         return self.send_message(chat_id, text, reply_markup=reply_markup)
@@ -94,8 +215,11 @@ class BaleBot:
     
     def handle_voice(self, chat_id: int, file_id: int, message_id: int) -> None:
         """پردازش ویس دریافتی"""
-        self.send_message(chat_id, "🎤 در حال پردازش ویس شما...")
         user_id = self.auth_manager.get_user_by_bale(str(chat_id))
+        if not user_id:
+            self.send_message(chat_id, "به نظر میاد هنوز ثبت نام نکردی.\nبرای شروع /start رو بزن.")
+            return
+        self.send_message(chat_id, "🎤 در حال پردازش ویس شما...")
 
         file_path = f"voice_files/bale_{message_id}.ogg"
         if self.download_file(file_id, file_path):
@@ -145,21 +269,29 @@ class BaleBot:
     
     def handle_text(self, chat_id: int, text: str) -> None:
         """پردازش متن دریافتی"""
+        if chat_id in self.user_states and not text.startswith("/"):
+            self.handle_onboarding(chat_id, text)
+            return
+
         # بررسی دستورات خاص
         if text == "/start":
-            self.send_app_button(
-                chat_id,
-                "🤖 به نارین، حسابدار هوشمند خوش آمدید!\n\n"
-                "🎤 قابلیت‌ها:\n"
-                "• ارسال ویس برای ثبت خودکار سند\n"
-                "• تایپ متن ساده\n"
-                "• برنامه اختصاصی (دکمه پایین یا دستور /app)\n"
-                "• دریافت گزارش PDF\n\n"
-                "📝 مثال ویس: 'خرید 100 عدد خودکار 5000 تومان'\n"
-                "📝 مثال متن: 'فروش 50 عدد کتاب 20000 تومان'\n"
-                "📊 دستور /report برای دریافت گزارش\n"
-                "📋 دستور /help برای راهنما"
-            )
+            user_id = self.auth_manager.get_user_by_bale(str(chat_id))
+            if user_id:
+                self.send_app_button(
+                    chat_id,
+                    "🤖 به نارین، حسابدار هوشمند خوش آمدید!\n\n"
+                    "🎤 قابلیت‌ها:\n"
+                    "• ارسال ویس برای ثبت خودکار سند\n"
+                    "• تایپ متن ساده\n"
+                    "• برنامه اختصاصی (دکمه پایین یا دستور /app)\n"
+                    "• دریافت گزارش PDF\n\n"
+                    "📝 مثال ویس: 'خرید 100 عدد خودکار 5000 تومان'\n"
+                    "📝 مثال متن: 'فروش 50 عدد کتاب 20000 تومان'\n"
+                    "📊 دستور /report برای دریافت گزارش\n"
+                    "📋 دستور /help برای راهنما"
+                )
+            else:
+                self.start_onboarding(chat_id)
         elif text == "/help":
             self.send_message(
                 chat_id,
@@ -197,6 +329,9 @@ class BaleBot:
                 self.send_message(chat_id, f"❌ خطا در تولید گزارش: {str(e)}")
         else:
             user_id = self.auth_manager.get_user_by_bale(str(chat_id))
+            if not user_id:
+                self.send_message(chat_id, "به نظر میاد هنوز ثبت نام نکردی.\nبرای شروع /start رو بزن.")
+                return
             # ابتدا سعی می‌کنیم با موتور هوشمند پردازش کنیم
             response = self.smart_dialog.process_message(user_id, text)
             if "متوجه نشدم" in response:

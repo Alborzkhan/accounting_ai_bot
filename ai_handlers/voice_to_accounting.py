@@ -13,11 +13,19 @@ class VoiceToAccounting:
             print(f"مدل {model_size} یافت نشد. در حال دانلود...")
             import requests
             url = "https://hf-mirror.com/openai/whisper-base/resolve/main/pytorch_model.bin"
-            response = requests.get(url, stream=True)
-            with open(model_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            print("دانلود کامل شد.")
+            tmp_path = model_path + ".part"
+            try:
+                response = requests.get(url, stream=True, timeout=(15, 60))
+                response.raise_for_status()
+                with open(tmp_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                os.replace(tmp_path, model_path)
+                print("دانلود کامل شد.")
+            except Exception as e:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+                raise RuntimeError(f"دانلود مدل Whisper ناموفق بود (شبکه؟): {e}") from e
 
         print(f"🔄 در حال بارگذاری مدل Whisper ({model_size})...")
         self.model = whisper.load_model(model_path)

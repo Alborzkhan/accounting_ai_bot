@@ -19,7 +19,7 @@ from core.auth import AuthManager
 from core.notifications import NotificationService
 from core.license_manager import LicenseManager
 from ai_handlers.llm_processor import LLMProcessor
-from config import TELEGRAM_TOKEN, PUBLIC_APP_URL
+from config import TELEGRAM_TOKEN, get_public_app_url
 
 BOT_NAME = "نارین"
 
@@ -91,6 +91,24 @@ class TelegramBot:
         for w in words_to_remove:
             raw = raw.replace(w, "")
         return raw.strip()
+
+    def _normalize_mobile(self, raw: str) -> str:
+        persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+        arabic_digits = "٠١٢٣٤٥٦٧٨٩"
+        out = []
+        for ch in raw.strip():
+            if ch in persian_digits:
+                out.append(str(persian_digits.index(ch)))
+            elif ch in arabic_digits:
+                out.append(str(arabic_digits.index(ch)))
+            elif ch.isdigit():
+                out.append(ch)
+        digits = "".join(out)
+        if digits.startswith("98") and len(digits) == 12:
+            digits = "0" + digits[2:]
+        elif digits.startswith("9") and len(digits) == 10:
+            digits = "0" + digits
+        return digits
 
     def _normalize_business_type(self, raw: str) -> str:
         mapping = {
@@ -200,29 +218,71 @@ class TelegramBot:
                     "حالا می‌تونیم شروع کنیم. هر سندی داری بگو!"
                 )
             else:
-                name = context.user_data.get("reg_name", "کاربر")
-                mobile = f"tg_{telegram_id}"
-                user_id = self.auth_manager.get_or_create_user(mobile, name)
-                self.auth_manager.link_telegram(user_id, telegram_id)
-                self.auth_manager.update_user_profile(
-                    user_id, business_type=biz_type, business_name=biz_name
-                )
-                self.license_manager.generate_license_key(user_id, "free_trial")
-                context.user_data["state"] = None
+                context.user_data["reg_business_name"] = biz_name
+                context.user_data["state"] = "onboarding_mobile"
                 await update.message.reply_text(
-                    f"✅ ثبت نام با موفقیت انجام شد!\n\n"
-                    f"📋 خلاصه اطلاعات:\n"
-                    f"نام: {name}\n"
-                    f"کسب و کار: {biz_name} ({biz_type})\n\n"
-                    f"یک لایسنس آزمایشی ۵۰ سندی برات فعال کردم.\n"
-                    f"حالا می‌تونیم شروع کنیم!\n\n"
-                    "📝 مثال:\n"
-                    "• خرید ۱۰۰ عدد خودکار ۵۰۰۰ تومان\n"
-                    "• علی کریمی ۵۰۰ هزار تومان پول زد\n"
-                    "• مانده حساب علی کریمی\n"
-                    "• پرداخت اجاره ۱۰ میلیون تومان\n\n"
-                    "💡 نکته: بعداً می‌تونی با فرستادن «اطلاعات من» بقیه اطلاعات (تلفن، شناسه ملی، کد اقتصادی) رو تکمیل کنی."
+                    "تقریباً تمومه! یه چیز مهم بمونه:\n\n"
+                    "📱 شماره موبایل واقعیت رو بگو (مثلاً 09121234567).\n"
+                    "اینجوری اگه از تلگرام، بله یا وب‌اپ هم وارد بشی، حساب کاریت همینه و اطلاعاتت یکیه."
                 )
+
+        elif state == "onboarding_mobile":
+            mobile = self._normalize_mobile(text)
+            if not re.match(r'^09\d{9}$', mobile):
+                await update.message.reply_text(
+                    "شماره موبایل معتبر نیست. لطفاً به شکل 09121234567 وارد کن:"
+                )
+                return
+            otp_result = self.auth_manager.request_otp(mobile)
+            if not otp_result.get("success"):
+                await update.message.reply_text(f"❌ {otp_result.get('message')}")
+                return
+            context.user_data["reg_mobile"] = mobile
+            context.user_data["state"] = "onboarding_otp"
+            dev_code = otp_result.get("dev_code")
+            msg = f"یک کد تایید ۶ رقمی به شماره {mobile} پیامک شد. لطفاً همون کد رو بفرست:"
+            if dev_code:
+                msg += f"\n\n(حالت تست، چون پیامک واقعی وصل نیست: {dev_code})"
+            await update.message.reply_text(msg)
+
+        elif state == "onboarding_otp":
+            code = "".join(ch for ch in text if ch.isdigit())
+            mobile = context.user_data.get("reg_mobile", "")
+            name = context.user_data.get("reg_name", "کاربر")
+            biz_type = context.user_data.get("reg_business_type", "بازرگانی عمومی")
+            biz_name = context.user_data.get("reg_business_name", "")
+            verify_result = self.auth_manager.verify_otp(mobile, code, name)
+            if not verify_result.get("success"):
+                await update.message.reply_text(
+                    f"❌ {verify_result.get('message')}\nدوباره کد رو بفرست، یا با /start از اول شروع کن."
+                )
+                return
+            user_id = verify_result["user_id"]
+            link_result = self.auth_manager.link_telegram(user_id, telegram_id)
+            if not link_result.get("success"):
+                await update.message.reply_text(f"❌ {link_result.get('message')}")
+                context.user_data["state"] = None
+                return
+            self.auth_manager.update_user_profile(
+                user_id, business_type=biz_type, business_name=biz_name
+            )
+            self.license_manager.generate_license_key(user_id, "free_trial")
+            context.user_data["state"] = None
+            await update.message.reply_text(
+                f"✅ ثبت نام با موفقیت انجام شد!\n\n"
+                f"📋 خلاصه اطلاعات:\n"
+                f"نام: {name}\n"
+                f"موبایل: {mobile}\n"
+                f"کسب و کار: {biz_name} ({biz_type})\n\n"
+                f"یک لایسنس آزمایشی ۵۰ سندی برات فعال کردم.\n"
+                f"حالا می‌تونیم شروع کنیم!\n\n"
+                "📝 مثال:\n"
+                "• خرید ۱۰۰ عدد خودکار ۵۰۰۰ تومان\n"
+                "• علی کریمی ۵۰۰ هزار تومان پول زد\n"
+                "• مانده حساب علی کریمی\n"
+                "• پرداخت اجاره ۱۰ میلیون تومان\n\n"
+                "💡 نکته: همین شماره موبایل رو می‌تونی برای ورود به وب‌اپ یا بله هم استفاده کنی، حساب همینه."
+            )
 
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = update.message.text.strip()
@@ -552,7 +612,7 @@ class TelegramBot:
 
     async def app_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("📱 برنامه نارین", web_app=WebAppInfo(url=f"{PUBLIC_APP_URL}/app"))
+            InlineKeyboardButton("📱 برنامه نارین", web_app=WebAppInfo(url=f"{get_public_app_url()}/app"))
         ]])
         await update.message.reply_text(
             f"برای باز کردن برنامه {BOT_NAME}، روی دکمه پایین بزن:",

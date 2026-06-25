@@ -18,6 +18,22 @@ FARAPAYAMAK_SENDER = os.getenv("FARAPAYAMAK_SENDER", "")
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 PUBLIC_APP_URL = os.getenv("PUBLIC_APP_URL", "http://localhost:8000")
 
+
+def get_public_app_url() -> str:
+    """مقدار فعلی PUBLIC_APP_URL را تازه از فایل .env می‌خواند (نه نسخه کش‌شده در زمان import).
+
+    در محیط تست با تونل، آدرس ممکن است هر چند دقیقه تغییر کند؛ بات‌هایی که از این مقدار
+    برای ساخت دکمه مینی‌اپ استفاده می‌کنند باید همیشه آخرین آدرس را بفرستند، نه آدرسی که
+    موقع روشن شدن پردازه بات معتبر بوده.
+    """
+    try:
+        from dotenv import dotenv_values
+        env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        fresh = dotenv_values(env_path)
+        return fresh.get("PUBLIC_APP_URL") or PUBLIC_APP_URL
+    except Exception:
+        return PUBLIC_APP_URL
+
 def validate_config():
     errors = []
     if not TELEGRAM_TOKEN:
