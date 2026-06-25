@@ -8,6 +8,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>نارین | حسابدار هوشمند</title>
     <link id="faviconLink" rel="icon" href="">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
@@ -614,6 +615,7 @@
         </div>
         <div class="modal-buttons">
             <button class="modal-btn" id="cancelInvoiceBtn">لغو</button>
+            <button class="modal-btn" id="manualInvoiceBtn">ثبت دستی</button>
             <button class="modal-btn modal-btn-primary" id="parseInvoiceBtn">بررسی فاکتور</button>
         </div>
     </div>
@@ -658,6 +660,18 @@
     <div class="modal-title">پشتیبانی</div>
     <div id="supportContent" class="profile-info">در حال بارگذاری...</div>
     <button class="modal-btn" id="closeSupportBtn">بستن</button>
+</div>
+
+<div id="welcomeGuideSheet" class="sheet">
+    <div class="modal-title">🎉 خوش آمدید!</div>
+    <div class="profile-info">
+        حساب شما با موفقیت ساخته شد و ۵۰ سند رایگان برایتان فعال شد.<br><br>
+        از کجا شروع کنیم؟<br>
+        🎤 <b>فرمان صوتی</b>: فقط حرف بزنید، خودم سند رو ثبت می‌کنم.<br>
+        📝 <b>ثبت سند</b>: یا متن رو تایپ کنید.<br><br>
+        هر وقت خواستید، از «پروفایل» می‌تونید اطلاعات کسب‌وکارتون رو کامل کنید.
+    </div>
+    <button class="modal-btn" id="closeWelcomeGuideBtn">بزن بریم 🚀</button>
 </div>
 
 <div id="reportsSheet" class="sheet" style="max-width:480px;">
@@ -893,7 +907,7 @@
             const data = await res.json();
             if (data.success) {
                 if (resendTimer) clearInterval(resendTimer);
-                enterHomeScreen();
+                enterHomeScreen(data.is_new);
             } else {
                 errEl.textContent = msgOf(data, 'کد تایید نادرست است.');
                 document.querySelectorAll('.otp-box').forEach(b => b.value = '');
@@ -932,11 +946,12 @@
         document.getElementById('otpStep').style.display = 'none';
     }
 
-    function enterHomeScreen() {
+    function enterHomeScreen(isNew) {
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('homeScreen').style.display = 'block';
         fetchBusiness();
         updateGross();
+        if (isNew) openWelcomeGuideSheet();
     }
 
     async function checkAuthAndInit() {
@@ -1443,6 +1458,14 @@
         } catch (e) { showToast('خطا در ارتباط با سرور', true); }
     };
 
+    document.getElementById('manualInvoiceBtn').onclick = () => {
+        showInvoiceReview({
+            document_type: 'sale', party_name: '', party_mobile: '',
+            is_official: false, vat_rate: 9, items: [], missing_info: [],
+            message: 'اطلاعات فاکتور را به‌صورت دستی وارد کنید.',
+        });
+    };
+
     let invMediaRec, invAudioChunks = [];
     async function startInvoiceVoiceRec() {
         invAudioChunks = [];
@@ -1591,6 +1614,17 @@
     }
     document.getElementById('supportTile').onclick = openSupportSheet;
     document.getElementById('closeSupportBtn').onclick = closeSupportSheet;
+
+    /* ===================== راهنمای خوش‌آمدگویی برای کاربر جدید ===================== */
+    function openWelcomeGuideSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('welcomeGuideSheet').classList.add('active');
+    }
+    function closeWelcomeGuideSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('welcomeGuideSheet').classList.remove('active');
+    }
+    document.getElementById('closeWelcomeGuideBtn').onclick = closeWelcomeGuideSheet;
 
     /* ===================== برندینگ پلتفرم (لوگوی صاحب اپ) ===================== */
     fetch('/platform-info').then(r => r.json()).then(info => {
@@ -1864,7 +1898,30 @@
         });
     }
 
-    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet(); });
+    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet(); closeWelcomeGuideSheet(); });
+
+    /* ===================== مینی‌اپ تلگرام: دکمه بازگشت بومی ===================== */
+    function isAnySheetOpen() {
+        return document.getElementById('overlay').classList.contains('active')
+            || document.getElementById('detailPage').classList.contains('active');
+    }
+    function closeAllSheets() {
+        closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet();
+        closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet();
+        closeWelcomeGuideSheet();
+        if (document.getElementById('detailPage').classList.contains('active')) {
+            document.getElementById('closeDetailBtn').click();
+        }
+    }
+    if (window.Telegram && window.Telegram.WebApp) {
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        tg.BackButton.onClick(closeAllSheets);
+        new MutationObserver(() => {
+            if (isAnySheetOpen()) tg.BackButton.show(); else tg.BackButton.hide();
+        }).observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: true });
+    }
 
     checkAuthAndInit();
 </script>

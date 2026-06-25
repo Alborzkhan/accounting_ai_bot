@@ -275,7 +275,7 @@ class SmartDialogEngine:
         finally:
             session.close()
     
-    def process_customer_balance(self, entities: Dict) -> Dict:
+    def process_customer_balance(self, entities: Dict, user_id: Optional[int] = None) -> Dict:
         """نمایش مانده حساب مشتری"""
         session = self.engine.Session()
         try:
@@ -303,7 +303,7 @@ class SmartDialogEngine:
                 }
             
             # محاسبه مانده حساب از تراز آزمایشی
-            balances = self.engine.get_trial_balance()
+            balances = self.engine.get_trial_balance(user_id=user_id)
             balance = 0
             for row in balances:
                 if row.code == '1101':  # بدهکاران تجاری
@@ -333,7 +333,7 @@ class SmartDialogEngine:
             result = self.process_payment_sent(intent_data['entities'], user_id=user_id)
             return result['message']
         elif intent_data['intent'] == 'customer_balance':
-            result = self.process_customer_balance(intent_data['entities'])
+            result = self.process_customer_balance(intent_data['entities'], user_id=user_id)
             return result['message']
         else:
             return "🤔 متوجه نشدم.\n\n📋 دستورات قابل تشخیص:\n• مشتری علی کریمی ۵۰۰ هزار تومان پول زد\n• پرداخت به شرکت آذر ۲۰۰ هزار تومان\n• مانده حساب علی کریمی"

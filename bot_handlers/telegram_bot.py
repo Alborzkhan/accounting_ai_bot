@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.logging_config import setup_logging
 setup_logging()
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from core.accounting_engine import AccountingEngine
 from core.text_command_handler import TextCommandHandler
@@ -19,7 +19,7 @@ from core.auth import AuthManager
 from core.notifications import NotificationService
 from core.license_manager import LicenseManager
 from ai_handlers.llm_processor import LLMProcessor
-from config import TELEGRAM_TOKEN
+from config import TELEGRAM_TOKEN, PUBLIC_APP_URL
 
 BOT_NAME = "نارین"
 
@@ -508,12 +508,20 @@ class TelegramBot:
         return get_account_name(code)
 
     async def report(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        telegram_id = str(update.effective_user.id)
+        user_id = self.auth_manager.get_user_by_telegram(telegram_id)
+        if not user_id:
+            await update.message.reply_text("اول /start رو بزن تا ثبت نام کنی.")
+            return
         try:
             await update.message.reply_text("📊 در حال تولید گزارش...")
             from reports.pdf_generator import PDFReportGenerator
             reporter = PDFReportGenerator(self.engine)
-            pdf_file = reporter.create_trial_balance_pdf("temp_report.pdf")
+            pdf_file = await asyncio.to_thread(
+                reporter.create_trial_balance_pdf, f"temp_report_{user_id}.pdf", user_id
+            )
             await update.message.reply_document(document=open(pdf_file, 'rb'))
+            os.remove(pdf_file)
         except Exception as e:
             await update.message.reply_text(f"❌ خطا: {str(e)}")
 
@@ -543,10 +551,12 @@ class TelegramBot:
         await update.message.reply_text(plans)
 
     async def app_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("📱 برنامه نارین", web_app=WebAppInfo(url=f"{PUBLIC_APP_URL}/app"))
+        ]])
         await update.message.reply_text(
-            f"برنامه {BOT_NAME}:\n"
-            "http://localhost:8000/\n\n"
-            "توی مرورگر گوشیت باز کن (HTTPS لازم: بعد از دیپلوی)"
+            f"برای باز کردن برنامه {BOT_NAME}، روی دکمه پایین بزن:",
+            reply_markup=keyboard,
         )
 
     async def send_notification_if_needed(self, update: Update, user_id: int):

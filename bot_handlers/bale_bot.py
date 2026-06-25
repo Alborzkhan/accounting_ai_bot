@@ -22,7 +22,7 @@ from typing import List, Optional, Dict, Any
 from core.auth import AuthManager
 from core.notifications import NotificationService
 from core.license_manager import LicenseManager
-from config import BALE_TOKEN
+from config import BALE_TOKEN, PUBLIC_APP_URL
 BASE_URL = f"https://tapi.bale.ai/bot{BALE_TOKEN}/"
 
 class BaleBot:
@@ -36,7 +36,7 @@ class BaleBot:
         self.license_manager = LicenseManager()
         self.last_update_id = 0
     
-    def send_message(self, chat_id: int, text: str) -> Optional[dict]:
+    def send_message(self, chat_id: int, text: str, reply_markup: Optional[dict] = None) -> Optional[dict]:
         """ارسال پیام به کاربر"""
         url = BASE_URL + "sendMessage"
         payload = {
@@ -44,12 +44,23 @@ class BaleBot:
             "text": text,
             "parse_mode": "Markdown"
         }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
         try:
             response = requests.post(url, json=payload)
             return response.json()
         except Exception as e:
             print(f"خطا در ارسال پیام: {e}")
             return None
+
+    def send_app_button(self, chat_id: int, text: str) -> Optional[dict]:
+        """ارسال پیام همراه با دکمه‌ای که مینی‌اپ (وب‌اپ نارین) را باز می‌کند"""
+        reply_markup = {
+            "inline_keyboard": [[
+                {"text": "📱 برنامه نارین", "web_app": {"url": f"{PUBLIC_APP_URL}/app"}}
+            ]]
+        }
+        return self.send_message(chat_id, text, reply_markup=reply_markup)
     
     def send_document(self, chat_id: int, file_path: str) -> Optional[dict]:
         """ارسال فایل PDF به کاربر"""
@@ -136,13 +147,13 @@ class BaleBot:
         """پردازش متن دریافتی"""
         # بررسی دستورات خاص
         if text == "/start":
-            self.send_message(
+            self.send_app_button(
                 chat_id,
-                "🤖 به ربات حسابداری هوشمند خوش آمدید!\n\n"
+                "🤖 به نارین، حسابدار هوشمند خوش آمدید!\n\n"
                 "🎤 قابلیت‌ها:\n"
                 "• ارسال ویس برای ثبت خودکار سند\n"
                 "• تایپ متن ساده\n"
-                "• برنامه اختصاصی (دستور /app)\n"
+                "• برنامه اختصاصی (دکمه پایین یا دستور /app)\n"
                 "• دریافت گزارش PDF\n\n"
                 "📝 مثال ویس: 'خرید 100 عدد خودکار 5000 تومان'\n"
                 "📝 مثال متن: 'فروش 50 عدد کتاب 20000 تومان'\n"
@@ -169,14 +180,19 @@ class BaleBot:
                 "• مانده حساب علی کریمی"
             )
         elif text == "/app":
-            self.send_message(chat_id, "برنامه حسابدار هوشمند:\nhttps://localhost:8000/app")
+            self.send_app_button(chat_id, "برای باز کردن برنامه نارین، روی دکمه پایین بزنید:")
         elif text == "/report":
+            user_id = self.auth_manager.get_user_by_bale(str(chat_id))
+            if not user_id:
+                self.send_message(chat_id, "اول /start رو بزن تا ثبت نام کنی.")
+                return
             self.send_message(chat_id, "📊 در حال تولید گزارش...")
             try:
                 from reports.pdf_generator import PDFReportGenerator
                 reporter = PDFReportGenerator(self.engine)
-                pdf_file = reporter.create_trial_balance_pdf("temp_report.pdf")
+                pdf_file = reporter.create_trial_balance_pdf(f"temp_report_{user_id}.pdf", user_id)
                 self.send_document(chat_id, pdf_file)
+                os.remove(pdf_file)
             except Exception as e:
                 self.send_message(chat_id, f"❌ خطا در تولید گزارش: {str(e)}")
         else:

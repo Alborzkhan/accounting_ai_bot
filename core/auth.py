@@ -99,12 +99,14 @@ class AuthManager:
             user_id = user.id
             session.commit()
 
-            if is_new:
-                try:
+            try:
+                from database.license_models import License
+                has_any_license = session.query(License).filter_by(user_id=user_id).first() is not None
+                if not has_any_license:
                     from core.license_manager import LicenseManager
                     LicenseManager(self.db_path).generate_license_key(user_id, "free_trial")
-                except Exception:
-                    logger.exception("free_trial license issuance failed for user_id=%s", user_id)
+            except Exception:
+                logger.exception("free_trial license issuance failed for user_id=%s", user_id)
 
             return {"success": True, "user_id": user_id, "token": token, "is_new": is_new, "message": "ورود موفق."}
         except Exception:

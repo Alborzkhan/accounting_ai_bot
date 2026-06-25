@@ -4,6 +4,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import datetime
+from typing import Optional
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
@@ -19,7 +20,7 @@ class PDFReportGenerator:
     def __init__(self, engine: AccountingEngine) -> None:
         self.engine = engine
     
-    def create_trial_balance_pdf(self, filename: str = "trial_balance.pdf") -> str:
+    def create_trial_balance_pdf(self, filename: str = "trial_balance.pdf", user_id: Optional[int] = None) -> str:
         """ایجاد گزارش تراز آزمایشی PDF"""
         doc = SimpleDocTemplate(filename, pagesize=A4)
         styles = getSampleStyleSheet()
@@ -41,8 +42,8 @@ class PDFReportGenerator:
         story.append(Spacer(1, 0.5*cm))
         
         # دریافت داده‌ها
-        balances = self.engine.get_trial_balance()
-        
+        balances = self.engine.get_trial_balance(user_id=user_id)
+
         # آماده سازی جدول
         data = [["کد حساب", "نام حساب", "بدهکار (تومان)", "بستانکار (تومان)"]]
         total_debit = 0
@@ -80,9 +81,9 @@ class PDFReportGenerator:
         print(f"✅ گزارش PDF در {filename} ذخیره شد.")
         return filename
     
-    def create_chart(self, filename: str = "chart.png") -> str:
+    def create_chart(self, filename: str = "chart.png", user_id: Optional[int] = None) -> str:
         """ایجاد نمودار میله‌ای از مانده حساب‌ها"""
-        balances = self.engine.get_trial_balance()
+        balances = self.engine.get_trial_balance(user_id=user_id)
         
         # آماده سازی داده
         accounts = []

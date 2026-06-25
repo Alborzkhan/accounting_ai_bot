@@ -16,6 +16,7 @@ FARAPAYAMAK_USERNAME = os.getenv("FARAPAYAMAK_USERNAME", "")
 FARAPAYAMAK_PASSWORD = os.getenv("FARAPAYAMAK_PASSWORD", "")
 FARAPAYAMAK_SENDER = os.getenv("FARAPAYAMAK_SENDER", "")
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+PUBLIC_APP_URL = os.getenv("PUBLIC_APP_URL", "http://localhost:8000")
 
 def validate_config():
     errors = []
