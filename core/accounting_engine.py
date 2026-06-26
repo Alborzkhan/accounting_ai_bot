@@ -53,7 +53,6 @@ class AccountingEngine:
             )
             session.add(customer)
             session.commit()
-            print(f"✅ مشتری {name} با کد {customer.id} ثبت شد.")
             return customer.id
         except Exception as e:
             session.rollback()
@@ -67,7 +66,6 @@ class AccountingEngine:
             vendor = Vendor(name=name, phone=phone, economic_code=economic_code)
             session.add(vendor)
             session.commit()
-            print(f"✅ فروشنده {name} با کد {vendor.id} ثبت شد.")
             return vendor.id
         finally:
             session.close()
@@ -123,7 +121,6 @@ class AccountingEngine:
                 session.add(line)
             
             session.commit()
-            print(f"✅ سند شماره {entry.id} با موفقیت ثبت شد.")
             return entry.id
 
         except Exception as e:

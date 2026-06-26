@@ -646,13 +646,19 @@ async def invoice_confirm(request: Request) -> dict:
     force = bool(payload.get("force", False))
 
     try:
-        if document_type == "sale" and is_official and not force:
-            warnings = inventory_reconciler.check_sale_items(user_id, cleaned_items)
+        if document_type == "sale" and not force:
+            warnings = inventory_reconciler.check_sale_items_general(user_id, cleaned_items)
+            message = "موجودی این کالا(ها) کافی نیست. آیا مطمئنید می‌خواهید این فاکتور را ثبت کنید؟"
+            if is_official:
+                official_warnings = inventory_reconciler.check_sale_items(user_id, cleaned_items)
+                if official_warnings:
+                    warnings = warnings + official_warnings
+                    message = "عدم تطبیق فروش رسمی با خرید رسمی ثبت‌شده برای این کالا(ها) شناسایی شد. آیا مطمئنید می‌خواهید این فاکتور را ثبت کنید؟"
             if warnings:
                 return {
                     "success": False,
                     "warning": True,
-                    "message": "عدم تطبیق فروش رسمی با خرید رسمی ثبت‌شده برای این کالا(ها) شناسایی شد. آیا مطمئنید می‌خواهید این فاکتور را ثبت کنید؟",
+                    "message": message,
                     "details": warnings,
                 }
 
@@ -690,6 +696,25 @@ async def invoice_confirm(request: Request) -> dict:
         if not result["success"]:
             return result
 
+        try:
+            if document_type == "purchase":
+                engine.create_voucher(
+                    date=datetime.now(),
+                    description=f"خرید فاکتور {result['invoice_number']} از {party_name}",
+                    lines=[("1201", result["total"], "debit"), ("2001", result["total"], "credit")],
+                    user_id=user_id,
+                )
+            elif document_type == "sale":
+                engine.create_voucher(
+                    date=datetime.now(),
+                    description=f"فروش فاکتور {result['invoice_number']} به {party_name}",
+                    lines=[("1101", result["total"], "debit"), ("4001", result["total"], "credit")],
+                    user_id=user_id,
+                )
+            # برای "proforma" سند حسابداری ثبت نمی‌شود، چون فقط پیش‌نویس/استعلام قیمت است، نه تراکنش قطعی.
+        except Exception:
+            logger.exception("posting accounting voucher for invoice failed, invoice_id=%s", result.get("invoice_id"))
+
         profile = auth_manager.get_user_profile(user_id) or {}
         seller = SimpleNamespace(
             company_name=profile.get("business_name") or profile.get("name") or "-",
@@ -724,9 +749,29 @@ async def invoice_confirm(request: Request) -> dict:
         return {"success": False, "message": "خطا در ثبت فاکتور."}
 
 
-@app.get("/invoice/{invoice_id}/pdf")
-async def invoice_get_pdf(request: Request, invoice_id: int, type: str = "sale"):
+_pdf_download_tokens: dict = {}  # token -> (invoice_id, type, user_id, expires_at). یک‌بارمصرف، فقط برای دانلود PDF.
+
+
+@app.get("/invoice/{invoice_id}/pdf-token")
+async def invoice_pdf_token(request: Request, invoice_id: int, type: str = "sale") -> dict:
+    """توکن دانلود یک‌بارمصرف کوتاه‌مدت می‌سازد - چون مینی‌اپ تلگرام/بله لینک PDF را در یک
+    مرورگر/وب‌ویوی خارج از نشست مینی‌اپ باز می‌کند که کوکی ورود را ندارد."""
     user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    token = secrets.token_urlsafe(24)
+    _pdf_download_tokens[token] = (invoice_id, type, user_id, datetime.now() + timedelta(minutes=5))
+    return {"success": True, "url": f"/invoice/{invoice_id}/pdf?type={type}&dl_token={token}"}
+
+
+@app.get("/invoice/{invoice_id}/pdf")
+async def invoice_get_pdf(request: Request, invoice_id: int, type: str = "sale", dl_token: Optional[str] = None):
+    user_id = get_user_id(request)
+    if not user_id and dl_token:
+        entry = _pdf_download_tokens.get(dl_token)
+        if entry and entry[0] == invoice_id and entry[1] == type and entry[3] > datetime.now():
+            user_id = entry[2]
+            del _pdf_download_tokens[dl_token]
     if not user_id:
         return JSONResponse({"success": False, "message": "لطفاً وارد حساب خود شوید."}, status_code=401)
     if type == "purchase":

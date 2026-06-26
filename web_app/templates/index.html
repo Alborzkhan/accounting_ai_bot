@@ -710,14 +710,15 @@
             <option value="balance_sheet">ترازنامه</option>
             <option value="journal">دفتر روزنامه (اسناد)</option>
             <option value="sales_invoices">فاکتورهای فروش</option>
+            <option value="proforma_invoices">پیش‌فاکتورها</option>
             <option value="purchase_invoices">فاکتورهای خرید</option>
         </select>
     </div>
     <div class="form-grid-2">
-        <input id="reportDateFrom" type="text" dir="ltr" placeholder="از تاریخ (مثلاً 1404/01/01)">
-        <input id="reportDateTo" type="text" dir="ltr" placeholder="تا تاریخ (مثلاً 1404/04/01)">
+        <input id="reportDateFrom" type="date" dir="ltr">
+        <input id="reportDateTo" type="date" dir="ltr">
     </div>
-    <div class="hint-text">تاریخ‌ها به‌صورت شمسی وارد شوند (سال/ماه/روز). در صورت خالی‌بودن، کل بازه نمایش داده می‌شود.</div>
+    <div class="hint-text">«از تاریخ» را با زدن روی فیلد انتخاب کنید. «تا تاریخ» پیش‌فرض امروز است؛ برای تغییر روی فیلد بزنید.</div>
     <button class="modal-btn modal-btn-primary" type="button" id="runReportBtn" style="margin-bottom:14px;">نمایش گزارش</button>
 
     <div id="reportSummary" class="hint-text" style="margin-bottom:10px; font-weight:600;"></div>
@@ -840,19 +841,17 @@
 <script>
     function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 
-    async function downloadFileBlob(url, filename) {
+    async function openInvoicePdf(invoiceId, docType) {
         try {
-            const res = await fetch(url, { credentials: 'same-origin' });
-            if (!res.ok) { showToast('دانلود فایل ناموفق بود.', true); return; }
-            const blob = await res.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = blobUrl;
-            a.download = filename || 'file.pdf';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+            const res = await fetch(`/invoice/${invoiceId}/pdf-token?type=${docType || 'sale'}`);
+            const data = await res.json();
+            if (!data.success) { showToast(msgOf(data, 'دانلود ممکن نشد'), true); return; }
+            const fullUrl = location.origin + data.url;
+            if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openLink) {
+                window.Telegram.WebApp.openLink(fullUrl);
+            } else {
+                window.open(fullUrl, '_blank');
+            }
         } catch (e) {
             showToast('دانلود فایل ناموفق بود.', true);
         }
@@ -1180,7 +1179,8 @@
     }
     document.getElementById('cancelVoucherBtn').onclick = closeVoucher;
     document.getElementById('confirmVoucherBtn').onclick = async () => {
-        const desc = document.getElementById('voucherDesc').value;
+        const descInput = document.getElementById('voucherDesc');
+        const desc = descInput.value;
         if (!desc.trim()) { showToast("متن سند را وارد کنید", true); return; }
         const res = await fetch('/create_voucher', {
             method: 'POST',
@@ -1189,7 +1189,10 @@
         });
         const json = await res.json();
         showToast(msgOf(json, 'خطایی رخ داد'), !json.success);
-        closeVoucher();
+        if (json.success) {
+            descInput.value = '';
+            descInput.focus();
+        }
         updateGross();
         fetchAccounts();
     };
@@ -1312,18 +1315,26 @@
     document.getElementById('askAiBtn').onclick = askNarin;
 
     /* ===================== پروفایل و خروج ===================== */
-    function openProfileSheet() {
-        document.getElementById('overlay').classList.add('active');
-        document.getElementById('profileSheet').classList.add('active');
-        const info = document.getElementById('profileLicenseInfo');
-        info.textContent = 'در حال بارگذاری...';
-        fetch('/license_status').then(r => r.json()).then(data => {
+    async function fetchLicenseStatusInto(elementId, retried) {
+        const info = document.getElementById(elementId);
+        try {
+            const res = await fetch('/license_status');
+            const data = await res.json();
             if (data.is_valid) {
                 info.innerHTML = `وضعیت اشتراک: <b>فعال</b><br>پلن: ${data.plan_type || '—'}<br>اعتبار تا: ${data.end_date || '—'}<br>${data.message || ''}`;
             } else {
                 info.innerHTML = data.message || 'وضعیت اشتراک نامشخص است.';
             }
-        }).catch(() => { info.textContent = 'خطا در دریافت وضعیت حساب.'; });
+        } catch (e) {
+            if (!retried) { setTimeout(() => fetchLicenseStatusInto(elementId, true), 1500); return; }
+            info.textContent = 'خطا در ارتباط با سرور. اتصال اینترنت را بررسی و دوباره باز کنید.';
+        }
+    }
+    function openProfileSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('profileSheet').classList.add('active');
+        document.getElementById('profileLicenseInfo').textContent = 'در حال بارگذاری...';
+        fetchLicenseStatusInto('profileLicenseInfo');
     }
     function closeProfileSheet() {
         document.getElementById('overlay').classList.remove('active');
@@ -1662,8 +1673,8 @@
     invoiceMicBtn.addEventListener('click', toggleInvoiceVoiceRec);
 
     document.getElementById('invoicePdfLink').addEventListener('click', (e) => {
-        const url = e.target.dataset.url;
-        if (url) downloadFileBlob(url, e.target.dataset.filename);
+        const invoiceId = e.target.dataset.invoiceId;
+        if (invoiceId) openInvoicePdf(invoiceId, e.target.dataset.docType);
     });
 
     document.getElementById('backToInvoiceInputBtn').onclick = () => {
@@ -1705,8 +1716,8 @@
                 document.getElementById('invoiceStepReview').style.display = 'none';
                 document.getElementById('invoiceStepDone').style.display = 'block';
                 document.getElementById('invoiceDoneMessage').textContent = data.message;
-                document.getElementById('invoicePdfLink').dataset.url = data.pdf_url;
-                document.getElementById('invoicePdfLink').dataset.filename = `${data.invoice_number || 'invoice'}.pdf`;
+                document.getElementById('invoicePdfLink').dataset.invoiceId = data.invoice_id;
+                document.getElementById('invoicePdfLink').dataset.docType = payload.document_type === 'purchase' ? 'purchase' : 'sale';
             } else if (data.warning) {
                 pendingForceConfirm = true;
                 warnBox.style.display = 'block';
@@ -1803,15 +1814,8 @@
     function openPricingSheet() {
         document.getElementById('overlay').classList.add('active');
         document.getElementById('pricingSheet').classList.add('active');
-        const info = document.getElementById('pricingLicenseInfo');
-        info.textContent = 'در حال بارگذاری...';
-        fetch('/license_status').then(r => r.json()).then(data => {
-            if (data.is_valid) {
-                info.innerHTML = `وضعیت اشتراک: <b>فعال</b><br>پلن: ${data.plan_type || '—'}<br>اعتبار تا: ${data.end_date || '—'}<br>${data.message || ''}`;
-            } else {
-                info.innerHTML = data.message || 'وضعیت اشتراک نامشخص است.';
-            }
-        }).catch(() => { info.textContent = 'خطا در دریافت وضعیت حساب.'; });
+        document.getElementById('pricingLicenseInfo').textContent = 'در حال بارگذاری...';
+        fetchLicenseStatusInto('pricingLicenseInfo');
 
         const list = document.getElementById('pricingPlansList');
         list.innerHTML = 'در حال بارگذاری پلن‌ها...';
@@ -1862,6 +1866,8 @@
     function openReportsSheet() {
         document.getElementById('overlay').classList.add('active');
         document.getElementById('reportsSheet').classList.add('active');
+        const toInput = document.getElementById('reportDateTo');
+        if (!toInput.value) toInput.value = new Date().toISOString().slice(0, 10);
         runReport();
         loadTrendChart();
     }
@@ -1935,26 +1941,27 @@
                     ? entries.map(e => `<div class="sub-detail-item"><span>سند ${e.id} - ${e.description || ''}</span><span>${(e.date || '').toString().slice(0, 10)}</span></div>`).join('')
                     : 'سندی یافت نشد.';
                 renderReportChart('bar', entries.slice(0, 10).map(e => 'سند ' + e.id), [{ label: 'تعداد ردیف', data: entries.slice(0, 10).map(e => (e.lines || []).length), backgroundColor: '#4facfe' }]);
-            } else if (type === 'sales_invoices') {
+            } else if (type === 'sales_invoices' || type === 'proforma_invoices') {
                 const res = await fetch('/invoice/list');
                 const json = await res.json();
-                const invs = json.data || [];
+                const wantProforma = type === 'proforma_invoices';
+                const invs = (json.data || []).filter(i => (i.document_type === 'proforma') === wantProforma);
                 const totalSum = invs.reduce((s, i) => s + (i.total || 0), 0);
-                summary.textContent = `تعداد فاکتور: ${invs.length} | جمع فروش: ${totalSum.toLocaleString()} تومان`;
-                const typeLabel = { sale: 'فروش', proforma: 'پیش‌فاکتور' };
+                const labelWord = wantProforma ? 'پیش‌فاکتور' : 'فروش';
+                summary.textContent = `تعداد ${labelWord}: ${invs.length} | جمع ${labelWord}: ${totalSum.toLocaleString()} تومان`;
                 table.innerHTML = invs.length
-                    ? invs.map(i => `<div class="sub-detail-item invoice-row" data-pdf-url="/invoice/${i.id}/pdf" data-pdf-name="${esc(i.invoice_number)}.pdf">
-                        <span>${esc(i.invoice_number)} (${typeLabel[i.document_type] || 'فروش'}) - ${esc(i.customer_name)}</span>
+                    ? invs.map(i => `<div class="sub-detail-item invoice-row" data-invoice-id="${i.id}" data-doc-type="sale">
+                        <span>${esc(i.invoice_number)} - ${esc(i.customer_name)}</span>
                         <span>${i.total.toLocaleString()} ت ${i.has_pdf ? '📄' : ''}</span>
                       </div>`).join('')
-                    : 'فاکتوری یافت نشد.';
+                    : `${labelWord}ی یافت نشد.`;
                 table.querySelectorAll('.invoice-row').forEach(row => {
                     if (row.querySelector('span:last-child').textContent.includes('📄')) {
                         row.style.cursor = 'pointer';
-                        row.addEventListener('click', () => downloadFileBlob(row.dataset.pdfUrl, row.dataset.pdfName));
+                        row.addEventListener('click', () => openInvoicePdf(row.dataset.invoiceId, row.dataset.docType));
                     }
                 });
-                renderReportChart('bar', invs.slice(0, 10).map(i => i.invoice_number), [{ label: 'مبلغ', data: invs.slice(0, 10).map(i => i.total), backgroundColor: '#1f9d6e' }]);
+                renderReportChart('bar', invs.slice(0, 10).map(i => i.invoice_number), [{ label: 'مبلغ', data: invs.slice(0, 10).map(i => i.total), backgroundColor: wantProforma ? '#a18cd1' : '#1f9d6e' }]);
             } else if (type === 'purchase_invoices') {
                 const res = await fetch('/invoice/purchases');
                 const json = await res.json();
@@ -1962,7 +1969,7 @@
                 const totalSum = invs.reduce((s, i) => s + (i.total || 0), 0);
                 summary.textContent = `تعداد فاکتور: ${invs.length} | جمع خرید: ${totalSum.toLocaleString()} تومان`;
                 table.innerHTML = invs.length
-                    ? invs.map(i => `<div class="sub-detail-item invoice-row" data-pdf-url="/invoice/${i.id}/pdf?type=purchase" data-pdf-name="${esc(i.invoice_number)}.pdf">
+                    ? invs.map(i => `<div class="sub-detail-item invoice-row" data-invoice-id="${i.id}" data-doc-type="purchase">
                         <span>${esc(i.invoice_number)} - ${esc(i.vendor_name)}</span>
                         <span>${i.total.toLocaleString()} ت ${i.has_pdf ? '📄' : ''}</span>
                       </div>`).join('')
@@ -1970,7 +1977,7 @@
                 table.querySelectorAll('.invoice-row').forEach(row => {
                     if (row.querySelector('span:last-child').textContent.includes('📄')) {
                         row.style.cursor = 'pointer';
-                        row.addEventListener('click', () => downloadFileBlob(row.dataset.pdfUrl, row.dataset.pdfName));
+                        row.addEventListener('click', () => openInvoicePdf(row.dataset.invoiceId, row.dataset.docType));
                     }
                 });
                 renderReportChart('bar', invs.slice(0, 10).map(i => i.invoice_number), [{ label: 'مبلغ', data: invs.slice(0, 10).map(i => i.total), backgroundColor: '#d24545' }]);
