@@ -70,21 +70,65 @@ class BaleBot:
         return mapping.get(raw.strip(), raw.strip())
 
     def start_onboarding(self, chat_id: int) -> None:
-        self.user_states[chat_id] = {"state": "onboarding_name"}
+        self.user_states[chat_id] = {"state": "onboarding_mobile_link"}
         self.send_message(
             chat_id,
             "سلام! 👋 من نارین هستم 🤖\n"
             "حسابدار شخصی و هوشمند شما\n\n"
-            "به نظر میاد اولین باره که با من کار می‌کنی.\n"
-            "بیا اول ثبت نامت رو تکمیل کنیم.\n\n"
-            "❓ لطفاً نام و نام خانوادگی خودت رو بگو:"
+            "هنوز حساب بله‌ت رو به نارین وصل نکردی. اگه قبلاً از وب‌اپ یا تلگرام ثبت‌نام کرده باشی،\n"
+            "با وارد کردن همون شماره موبایل، مستقیم به همون حساب وصل می‌شی - نیازی به ثبت‌نام دوباره نیست.\n\n"
+            "📱 شماره موبایلت رو بگو (مثلاً 09121234567):"
         )
 
     def handle_onboarding(self, chat_id: int, text: str) -> None:
         st = self.user_states.get(chat_id, {})
         state = st.get("state")
 
-        if state == "onboarding_name":
+        if state == "onboarding_mobile_link":
+            mobile = self._normalize_mobile(text)
+            if not re.match(r'^09\d{9}$', mobile):
+                self.send_message(chat_id, "شماره موبایل معتبر نیست. لطفاً به شکل 09121234567 وارد کن:")
+                return
+            otp_result = self.auth_manager.request_otp(mobile)
+            if not otp_result.get("success"):
+                self.send_message(chat_id, f"❌ {otp_result.get('message')}")
+                return
+            st["reg_mobile"] = mobile
+            st["state"] = "onboarding_otp_link"
+            dev_code = otp_result.get("dev_code")
+            msg = f"یک کد تایید ۶ رقمی به شماره {mobile} پیامک شد. لطفاً همون کد رو بفرست:"
+            if dev_code:
+                msg += f"\n\n(حالت تست، چون پیامک واقعی وصل نیست: {dev_code})"
+            self.send_message(chat_id, msg)
+
+        elif state == "onboarding_otp_link":
+            code = "".join(ch for ch in text if ch.isdigit())
+            mobile = st.get("reg_mobile", "")
+            verify_result = self.auth_manager.verify_otp(mobile, code)
+            if not verify_result.get("success"):
+                self.send_message(chat_id, f"❌ {verify_result.get('message')}\nدوباره کد رو بفرست، یا با /start از اول شروع کن.")
+                return
+            linked_user_id = verify_result["user_id"]
+            link_result = self.auth_manager.link_bale(linked_user_id, str(chat_id))
+            if not link_result.get("success"):
+                self.send_message(chat_id, f"❌ {link_result.get('message')}")
+                self.user_states.pop(chat_id, None)
+                return
+            if not verify_result.get("is_new"):
+                profile = self.auth_manager.get_user_profile(linked_user_id) or {}
+                self.user_states.pop(chat_id, None)
+                self.send_message(
+                    chat_id,
+                    f"✅ وصل شد! خوش اومدی {profile.get('name') or ''} جان 👋\n\n"
+                    f"کسب و کار: {profile.get('business_name') or '-'}\n\n"
+                    "حساب بله‌ت به همون حساب قبلیت وصل شد. هر سندی داری بگو!"
+                )
+                return
+            st["reg_mobile"] = mobile
+            st["state"] = "onboarding_name"
+            self.send_message(chat_id, "خب، حساب جدیدی برات می‌سازم!\n\n❓ لطفاً نام و نام خانوادگی خودت رو بگو:")
+
+        elif state == "onboarding_name":
             st["reg_name"] = text.strip()
             st["state"] = "onboarding_business_type"
             self.send_message(
@@ -100,61 +144,17 @@ class BaleBot:
             self.send_message(chat_id, "عالیه! اسم کسب و کارت چیه؟\nمثلاً: البرز فلز، شرکت آذر، فروشگاه بهار")
 
         elif state == "onboarding_business_name":
-            st["reg_business_name"] = text.strip()
-            st["state"] = "onboarding_mobile"
-            self.send_message(
-                chat_id,
-                "تقریباً تمومه! یه چیز مهم بمونه:\n\n"
-                "📱 شماره موبایل واقعیت رو بگو (مثلاً 09121234567).\n"
-                "اینجوری اگه از تلگرام، بله یا وب‌اپ هم وارد بشی، حساب کاریت همینه و اطلاعاتت یکیه."
-            )
-
-        elif state == "onboarding_mobile":
-            mobile = self._normalize_mobile(text)
-            if not re.match(r'^09\d{9}$', mobile):
-                self.send_message(chat_id, "شماره موبایل معتبر نیست. لطفاً به شکل 09121234567 وارد کن:")
-                return
-            otp_result = self.auth_manager.request_otp(mobile)
-            if not otp_result.get("success"):
-                self.send_message(chat_id, f"❌ {otp_result.get('message')}")
-                return
-            st["reg_mobile"] = mobile
-            st["state"] = "onboarding_otp"
-            dev_code = otp_result.get("dev_code")
-            msg = f"یک کد تایید ۶ رقمی به شماره {mobile} پیامک شد. لطفاً همون کد رو بفرست:"
-            if dev_code:
-                msg += f"\n\n(حالت تست، چون پیامک واقعی وصل نیست: {dev_code})"
-            self.send_message(chat_id, msg)
-
-        elif state == "onboarding_otp":
-            code = "".join(ch for ch in text if ch.isdigit())
-            mobile = st.get("reg_mobile", "")
-            name = st.get("reg_name", "کاربر")
             biz_type = st.get("reg_business_type", "بازرگانی عمومی")
-            biz_name = st.get("reg_business_name", "")
-            verify_result = self.auth_manager.verify_otp(mobile, code, name)
-            if not verify_result.get("success"):
-                self.send_message(chat_id, f"❌ {verify_result.get('message')}\nدوباره کد رو بفرست، یا با /start از اول شروع کن.")
-                return
-            user_id = verify_result["user_id"]
-            link_result = self.auth_manager.link_bale(user_id, str(chat_id))
-            if not link_result.get("success"):
-                self.send_message(chat_id, f"❌ {link_result.get('message')}")
-                self.user_states.pop(chat_id, None)
-                return
+            biz_name = text.strip()
+            user_id = self.auth_manager.get_user_by_bale(str(chat_id))
             self.auth_manager.update_user_profile(user_id, business_type=biz_type, business_name=biz_name)
-            self.license_manager.generate_license_key(user_id, "free_trial")
             self.user_states.pop(chat_id, None)
             self.send_message(
                 chat_id,
-                f"✅ ثبت نام با موفقیت انجام شد!\n\n"
-                f"📋 خلاصه اطلاعات:\n"
-                f"نام: {name}\n"
-                f"موبایل: {mobile}\n"
-                f"کسب و کار: {biz_name} ({biz_type})\n\n"
-                f"یک لایسنس آزمایشی ۵۰ سندی برات فعال کردم.\n"
-                f"حالا می‌تونیم شروع کنیم!\n\n"
-                "💡 نکته: همین شماره موبایل رو می‌تونی برای ورود به وب‌اپ یا تلگرام هم استفاده کنی، حساب همینه."
+                f"✅ اطلاعات کسب و کارت ذخیره شد!\n"
+                f"نوع: {biz_type}\n"
+                f"نام: {biz_name}\n\n"
+                "حالا می‌تونیم شروع کنیم. هر سندی داری بگو!"
             )
     
     def send_message(self, chat_id: int, text: str, reply_markup: Optional[dict] = None) -> Optional[dict]:

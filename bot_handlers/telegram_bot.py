@@ -60,11 +60,11 @@ class TelegramBot:
             await update.message.reply_text(
                 f"سلام! 👋 من {BOT_NAME} هستم 🤖\n"
                 "حسابدار شخصی و هوشمند شما\n\n"
-                "به نظر میاد اولین باره که با من کار می‌کنی.\n"
-                "بیا اول ثبت نامت رو تکمیل کنیم.\n\n"
-                "❓ لطفاً نام و نام خانوادگی خودت رو بگو:"
+                "هنوز حساب تلگرامت رو به نارین وصل نکردی. اگه قبلاً از وب‌اپ یا بله ثبت‌نام کرده باشی،\n"
+                "با وارد کردن همون شماره موبایل، مستقیم به همون حساب وصل می‌شی - نیازی به ثبت‌نام دوباره نیست.\n\n"
+                "📱 شماره موبایلت رو بگو (مثلاً 09121234567):"
             )
-            context.user_data["state"] = "onboarding_name"
+            context.user_data["state"] = "onboarding_mobile_link"
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
@@ -129,7 +129,57 @@ class TelegramBot:
         telegram_id = str(update.effective_user.id)
         user_id = self.auth_manager.get_user_by_telegram(telegram_id)
 
-        if state == "onboarding_name":
+        if state == "onboarding_mobile_link":
+            mobile = self._normalize_mobile(text)
+            if not re.match(r'^09\d{9}$', mobile):
+                await update.message.reply_text(
+                    "شماره موبایل معتبر نیست. لطفاً به شکل 09121234567 وارد کن:"
+                )
+                return
+            otp_result = self.auth_manager.request_otp(mobile)
+            if not otp_result.get("success"):
+                await update.message.reply_text(f"❌ {otp_result.get('message')}")
+                return
+            context.user_data["reg_mobile"] = mobile
+            context.user_data["state"] = "onboarding_otp_link"
+            dev_code = otp_result.get("dev_code")
+            msg = f"یک کد تایید ۶ رقمی به شماره {mobile} پیامک شد. لطفاً همون کد رو بفرست:"
+            if dev_code:
+                msg += f"\n\n(حالت تست، چون پیامک واقعی وصل نیست: {dev_code})"
+            await update.message.reply_text(msg)
+
+        elif state == "onboarding_otp_link":
+            code = "".join(ch for ch in text if ch.isdigit())
+            mobile = context.user_data.get("reg_mobile", "")
+            verify_result = self.auth_manager.verify_otp(mobile, code)
+            if not verify_result.get("success"):
+                await update.message.reply_text(
+                    f"❌ {verify_result.get('message')}\nدوباره کد رو بفرست، یا با /start از اول شروع کن."
+                )
+                return
+            linked_user_id = verify_result["user_id"]
+            link_result = self.auth_manager.link_telegram(linked_user_id, telegram_id)
+            if not link_result.get("success"):
+                await update.message.reply_text(f"❌ {link_result.get('message')}")
+                context.user_data["state"] = None
+                return
+            if not verify_result.get("is_new"):
+                profile = self.auth_manager.get_user_profile(linked_user_id) or {}
+                context.user_data["state"] = None
+                await update.message.reply_text(
+                    f"✅ وصل شد! خوش اومدی {profile.get('name') or ''} جان 👋\n\n"
+                    f"کسب و کار: {profile.get('business_name') or '-'}\n\n"
+                    "حساب تلگرامت به همون حساب قبلیت وصل شد. هر سندی داری بگو!"
+                )
+                return
+            context.user_data["reg_mobile"] = mobile
+            context.user_data["state"] = "onboarding_name"
+            await update.message.reply_text(
+                "خب، حساب جدیدی برات می‌سازم!\n\n"
+                "❓ لطفاً نام و نام خانوادگی خودت رو بگو:"
+            )
+
+        elif state == "onboarding_name":
             cleaned = self._clean_name(text)
             context.user_data["reg_name"] = cleaned
             context.user_data["state"] = "onboarding_business_type"
@@ -142,21 +192,16 @@ class TelegramBot:
         elif state == "onboarding_business_type":
             normalized = self._normalize_business_type(text)
             context.user_data["reg_business_type"] = normalized
-            if user_id:
-                profile = self.auth_manager.get_user_profile(user_id)
-                name = profile["name"] if profile else "کاربر"
-                context.user_data["reg_name"] = name
-                context.user_data["state"] = "onboarding_business_name"
-                await update.message.reply_text(
-                    f"{name} جان، اسم کسب و کارت چیه؟\n"
-                    "مثلاً: البرز فلز، شرکت آذر، فروشگاه بهار"
-                )
-            else:
-                context.user_data["state"] = "onboarding_business_name"
-                await update.message.reply_text(
-                    "عالیه! اسم کسب و کارت چیه؟\n"
-                    "مثلاً: البرز فلز، شرکت آذر، فروشگاه بهار"
-                )
+            if not context.user_data.get("reg_name"):
+                # وارد این مرحله شده بدون عبور از "onboarding_name" (مثلاً تکمیل پروفایل کاربر قبلاً لینک‌شده)
+                profile = self.auth_manager.get_user_profile(user_id) if user_id else None
+                context.user_data["reg_name"] = (profile or {}).get("name") or "کاربر"
+            name = context.user_data["reg_name"]
+            context.user_data["state"] = "onboarding_business_name"
+            await update.message.reply_text(
+                f"{name} جان، اسم کسب و کارت چیه؟\n"
+                "مثلاً: البرز فلز، شرکت آذر، فروشگاه بهار"
+            )
 
         elif state == "invoice_customer":
             context.user_data["invoice_customer_name"] = text
@@ -205,83 +250,15 @@ class TelegramBot:
         elif state == "onboarding_business_name":
             biz_type = context.user_data.get("reg_business_type", "بازرگانی عمومی")
             biz_name = text
-
-            if user_id:
-                self.auth_manager.update_user_profile(
-                    user_id, business_type=biz_type, business_name=biz_name
-                )
-                context.user_data["state"] = None
-                await update.message.reply_text(
-                    f"✅ اطلاعات کسب و کارت ذخیره شد!\n"
-                    f"نوع: {biz_type}\n"
-                    f"نام: {biz_name}\n\n"
-                    "حالا می‌تونیم شروع کنیم. هر سندی داری بگو!"
-                )
-            else:
-                context.user_data["reg_business_name"] = biz_name
-                context.user_data["state"] = "onboarding_mobile"
-                await update.message.reply_text(
-                    "تقریباً تمومه! یه چیز مهم بمونه:\n\n"
-                    "📱 شماره موبایل واقعیت رو بگو (مثلاً 09121234567).\n"
-                    "اینجوری اگه از تلگرام، بله یا وب‌اپ هم وارد بشی، حساب کاریت همینه و اطلاعاتت یکیه."
-                )
-
-        elif state == "onboarding_mobile":
-            mobile = self._normalize_mobile(text)
-            if not re.match(r'^09\d{9}$', mobile):
-                await update.message.reply_text(
-                    "شماره موبایل معتبر نیست. لطفاً به شکل 09121234567 وارد کن:"
-                )
-                return
-            otp_result = self.auth_manager.request_otp(mobile)
-            if not otp_result.get("success"):
-                await update.message.reply_text(f"❌ {otp_result.get('message')}")
-                return
-            context.user_data["reg_mobile"] = mobile
-            context.user_data["state"] = "onboarding_otp"
-            dev_code = otp_result.get("dev_code")
-            msg = f"یک کد تایید ۶ رقمی به شماره {mobile} پیامک شد. لطفاً همون کد رو بفرست:"
-            if dev_code:
-                msg += f"\n\n(حالت تست، چون پیامک واقعی وصل نیست: {dev_code})"
-            await update.message.reply_text(msg)
-
-        elif state == "onboarding_otp":
-            code = "".join(ch for ch in text if ch.isdigit())
-            mobile = context.user_data.get("reg_mobile", "")
-            name = context.user_data.get("reg_name", "کاربر")
-            biz_type = context.user_data.get("reg_business_type", "بازرگانی عمومی")
-            biz_name = context.user_data.get("reg_business_name", "")
-            verify_result = self.auth_manager.verify_otp(mobile, code, name)
-            if not verify_result.get("success"):
-                await update.message.reply_text(
-                    f"❌ {verify_result.get('message')}\nدوباره کد رو بفرست، یا با /start از اول شروع کن."
-                )
-                return
-            user_id = verify_result["user_id"]
-            link_result = self.auth_manager.link_telegram(user_id, telegram_id)
-            if not link_result.get("success"):
-                await update.message.reply_text(f"❌ {link_result.get('message')}")
-                context.user_data["state"] = None
-                return
             self.auth_manager.update_user_profile(
                 user_id, business_type=biz_type, business_name=biz_name
             )
-            self.license_manager.generate_license_key(user_id, "free_trial")
             context.user_data["state"] = None
             await update.message.reply_text(
-                f"✅ ثبت نام با موفقیت انجام شد!\n\n"
-                f"📋 خلاصه اطلاعات:\n"
-                f"نام: {name}\n"
-                f"موبایل: {mobile}\n"
-                f"کسب و کار: {biz_name} ({biz_type})\n\n"
-                f"یک لایسنس آزمایشی ۵۰ سندی برات فعال کردم.\n"
-                f"حالا می‌تونیم شروع کنیم!\n\n"
-                "📝 مثال:\n"
-                "• خرید ۱۰۰ عدد خودکار ۵۰۰۰ تومان\n"
-                "• علی کریمی ۵۰۰ هزار تومان پول زد\n"
-                "• مانده حساب علی کریمی\n"
-                "• پرداخت اجاره ۱۰ میلیون تومان\n\n"
-                "💡 نکته: همین شماره موبایل رو می‌تونی برای ورود به وب‌اپ یا بله هم استفاده کنی، حساب همینه."
+                f"✅ اطلاعات کسب و کارت ذخیره شد!\n"
+                f"نوع: {biz_type}\n"
+                f"نام: {biz_name}\n\n"
+                "حالا می‌تونیم شروع کنیم. هر سندی داری بگو!"
             )
 
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
