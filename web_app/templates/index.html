@@ -855,6 +855,16 @@
 <script>
     function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 
+    async function fetchWithTimeout(url, options, timeoutMs) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs || 45000);
+        try {
+            return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
     async function openInvoicePdf(invoiceId, docType) {
         try {
             const res = await fetch(`/invoice/${invoiceId}/pdf-token?type=${docType || 'sale'}`);
@@ -1196,19 +1206,23 @@
         const descInput = document.getElementById('voucherDesc');
         const desc = descInput.value;
         if (!desc.trim()) { showToast("متن سند را وارد کنید", true); return; }
-        const res = await fetch('/create_voucher', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'description=' + encodeURIComponent(desc)
-        });
-        const json = await res.json();
-        showToast(msgOf(json, 'خطایی رخ داد'), !json.success);
-        if (json.success) {
-            descInput.value = '';
-            descInput.focus();
+        try {
+            const res = await fetchWithTimeout('/create_voucher', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'description=' + encodeURIComponent(desc)
+            }, 30000);
+            const json = await res.json();
+            showToast(msgOf(json, 'خطایی رخ داد'), !json.success);
+            if (json.success) {
+                descInput.value = '';
+                descInput.focus();
+            }
+            updateGross();
+            fetchAccounts();
+        } catch (e) {
+            showToast(e && e.name === 'AbortError' ? 'پاسخی از سرور نرسید.' : 'خطا در ارتباط با سرور.', true);
         }
-        updateGross();
-        fetchAccounts();
     };
 
     /* ===================== فرمان صوتی ===================== */
@@ -1223,7 +1237,7 @@
             const fd = new FormData(); fd.append('voice', blob);
             const statusEl = document.getElementById('voiceStatusText');
             try {
-                const resp = await fetch('/process_voice', { method: 'POST', body: fd });
+                const resp = await fetchWithTimeout('/process_voice', { method: 'POST', body: fd }, 60000);
                 const json = await resp.json();
                 const msg = msgOf(json, 'ثبت شد');
                 showToast(msg, !json.success);
@@ -1231,8 +1245,9 @@
                 updateGross();
                 fetchAccounts();
             } catch (e) {
-                statusEl.innerHTML = '❌ خطا در ارتباط با سرور. دوباره تلاش کنید.';
-                showToast('خطا در ارتباط با سرور.', true);
+                const timedOut = e && e.name === 'AbortError';
+                statusEl.innerHTML = timedOut ? '❌ پاسخی از سرور نرسید (یک دقیقه گذشت). دوباره تلاش کنید.' : '❌ خطا در ارتباط با سرور. دوباره تلاش کنید.';
+                showToast(timedOut ? 'پاسخی از سرور نرسید.' : 'خطا در ارتباط با سرور.', true);
             } finally {
                 stream.getTracks().forEach(t => t.stop());
                 setTimeout(() => closeVoiceModal(), 2500);
@@ -1653,11 +1668,13 @@
             const fd = new FormData(); fd.append('voice', blob);
             showToast('🤖 در حال پردازش صدا...', false);
             try {
-                const resp = await fetch('/invoice/parse-voice', { method: 'POST', body: fd });
+                const resp = await fetchWithTimeout('/invoice/parse-voice', { method: 'POST', body: fd }, 60000);
                 const data = await resp.json();
                 if (data.success) showInvoiceReview(data);
                 else showToast(msgOf(data, 'تشخیص ممکن نشد'), true);
-            } catch (e) { showToast('خطا در ارتباط با سرور', true); }
+            } catch (e) {
+                showToast(e && e.name === 'AbortError' ? 'پاسخی از سرور نرسید.' : 'خطا در ارتباط با سرور', true);
+            }
             stream.getTracks().forEach(t => t.stop());
         };
         invMediaRec.start();

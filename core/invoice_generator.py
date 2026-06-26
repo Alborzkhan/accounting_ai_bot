@@ -20,19 +20,21 @@ class InvoiceGenerator:
         self.product_manager = ProductManager(db_path)
         self.accounting_engine = AccountingEngine(db_path)
     
-    def get_next_invoice_number(self, user_id: Optional[int] = None) -> str:
+    def get_next_invoice_number(self, user_id: Optional[int] = None, is_official: bool = False) -> str:
+        """شماره فاکتورهای رسمی و غیررسمی، توالی جدا از هم دارند؛ فاکتورهای رسمی از ۱۰۰۰ شروع می‌شوند."""
         session = self.Session()
         try:
-            query = session.query(ProformaInvoice)
+            query = session.query(ProformaInvoice).filter(ProformaInvoice.is_official == is_official)
             if user_id is not None:
                 query = query.filter(ProformaInvoice.user_id == user_id)
             last_invoice = query.order_by(ProformaInvoice.id.desc()).first()
 
+            base_num = 1000 if is_official else 1
             if last_invoice and last_invoice.invoice_number:
                 last_num = int(last_invoice.invoice_number.split('-')[-1])
                 new_num = last_num + 1
             else:
-                new_num = 1
+                new_num = base_num
 
             return f"INV-{datetime.now().strftime('%Y%m')}-{new_num:04d}"
         finally:
@@ -98,14 +100,16 @@ class InvoiceGenerator:
         finally:
             session.close()
 
-    def get_next_purchase_number(self, user_id: Optional[int] = None) -> str:
+    def get_next_purchase_number(self, user_id: Optional[int] = None, is_official: bool = False) -> str:
+        """شماره فاکتورهای رسمی و غیررسمی، توالی جدا از هم دارند؛ فاکتورهای رسمی از ۱۰۰۰ شروع می‌شوند."""
         session = self.Session()
         try:
-            query = session.query(PurchaseInvoice)
+            query = session.query(PurchaseInvoice).filter(PurchaseInvoice.is_official == is_official)
             if user_id is not None:
                 query = query.filter(PurchaseInvoice.user_id == user_id)
             last = query.order_by(PurchaseInvoice.id.desc()).first()
-            new_num = int(last.invoice_number.split('-')[-1]) + 1 if last and last.invoice_number else 1
+            base_num = 1000 if is_official else 1
+            new_num = int(last.invoice_number.split('-')[-1]) + 1 if last and last.invoice_number else base_num
             return f"PUR-{datetime.now().strftime('%Y%m')}-{new_num:04d}"
         finally:
             session.close()
@@ -133,7 +137,7 @@ class InvoiceGenerator:
             total = subtotal + vat_amount
 
             purchase = PurchaseInvoice(
-                invoice_number=self.get_next_purchase_number(user_id),
+                invoice_number=self.get_next_purchase_number(user_id, is_official=apply_vat),
                 date=datetime.now(),
                 vendor_id=vendor_id,
                 user_id=user_id,
@@ -229,7 +233,7 @@ class InvoiceGenerator:
             total = subtotal + vat_amount
 
             invoice = ProformaInvoice(
-                invoice_number=self.get_next_invoice_number(user_id),
+                invoice_number=self.get_next_invoice_number(user_id, is_official=apply_vat),
                 date=datetime.now(),
                 customer_id=customer_id,
                 user_id=user_id,
