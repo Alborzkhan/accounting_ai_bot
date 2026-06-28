@@ -7,7 +7,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from core.accounting_engine import AccountingEngine
-from database.models import Customer, Vendor, JournalLine, JournalEntry
+from database.models import Account, Customer, Vendor, JournalLine, JournalEntry
 
 class SmartDialogEngine:
     def __init__(self, engine: AccountingEngine) -> None:
@@ -290,26 +290,30 @@ class SmartDialogEngine:
                 return {'success': False, 'message': "❌ نام مشتری تشخیص داده نشد.\nمثال: 'مانده حساب علی کریمی'"}
             
             customer = session.query(Customer).filter(
-                Customer.name.like(f"%{customer_name}%")
+                Customer.user_id == user_id, Customer.name.like(f"%{customer_name}%")
             ).first()
-            
+
             if not customer:
                 # نمایش لیست مشتریان موجود
-                all_customers = session.query(Customer).all()
+                all_customers = session.query(Customer).filter(Customer.user_id == user_id).all()
                 customer_list = "\n".join([f"  • {c.name}" for c in all_customers]) if all_customers else "  • هیچ مشتری ثبت نشده است."
                 return {
                     'success': False,
                     'message': f"❌ مشتری با نام '{customer_name}' یافت نشد.\n\n📋 لیست مشتریان ثبت شده:\n{customer_list}"
                 }
-            
-            # محاسبه مانده حساب از تراز آزمایشی
-            balances = self.engine.get_trial_balance(user_id=user_id)
-            balance = 0
-            for row in balances:
-                if row.code == '1101':  # بدهکاران تجاری
-                    balance = row.total_debit - row.total_credit
-                    break
-            
+
+            # محاسبه مانده حساب همین مشتری از روی اسناد متصل به او (نه کل حساب بدهکاران تجاری)
+            rows = session.query(JournalLine, JournalEntry).join(
+                JournalEntry, JournalEntry.id == JournalLine.entry_id
+            ).join(
+                Account, Account.id == JournalLine.account_id
+            ).filter(
+                Account.code == '1101',
+                JournalEntry.user_id == user_id,
+                JournalEntry.customer_id == customer.id,
+            ).all()
+            balance = sum(line.amount if line.side == 'debit' else -line.amount for line, _ in rows)
+
             return {
                 'success': True,
                 'message': f"💰 مانده حساب {customer.name}: {balance:,.0f} تومان"

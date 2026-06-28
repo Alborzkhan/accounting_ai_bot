@@ -28,6 +28,7 @@ logs/
 # Reports
 *.pdf
 *.png
+!android_app/**/*.png
 
 # OS
 Thumbs.db

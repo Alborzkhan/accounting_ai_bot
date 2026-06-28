@@ -234,17 +234,46 @@ async def get_trial_balance(request: Request, date_from: str = "", date_to: str 
     return {"data": data}
 
 # جزئیات تفصیلی یک حساب (آخرین گردش‌ها)
+PARTY_ACCOUNT_CODES = {"1101": "customer", "2001": "vendor"}
+
+
 @app.get("/sub_details")
 async def sub_details(request: Request, code: str) -> dict:
     user_id = get_user_id(request)
     if not user_id:
         return {"items": []}
-    from database.models import Account, JournalEntry, JournalLine
+    from database.models import Account, Customer, JournalEntry, JournalLine, Vendor
     session = engine.Session()
     try:
         account = session.query(Account).filter_by(code=code).first()
         if not account:
             return {"items": []}
+
+        party_type = PARTY_ACCOUNT_CODES.get(code)
+        if party_type:
+            party_field = JournalEntry.customer_id if party_type == "customer" else JournalEntry.vendor_id
+            rows = session.query(JournalLine, JournalEntry).join(
+                JournalEntry, JournalEntry.id == JournalLine.entry_id
+            ).filter(
+                JournalLine.account_id == account.id,
+                JournalEntry.user_id == user_id,
+                party_field.isnot(None),
+            ).all()
+            balances: dict = {}
+            for line, entry in rows:
+                party_id = entry.customer_id if party_type == "customer" else entry.vendor_id
+                delta = line.amount if line.side == "debit" else -line.amount
+                balances[party_id] = balances.get(party_id, 0) + delta
+            if balances:
+                model = Customer if party_type == "customer" else Vendor
+                parties = session.query(model).filter(model.id.in_(balances.keys())).all()
+                items = [
+                    {"id": p.id, "name": p.name, "value": f"{balances[p.id]:,.0f}"}
+                    for p in parties if abs(balances[p.id]) > 0.01
+                ]
+                items.sort(key=lambda x: -abs(float(x["value"].replace(",", ""))))
+                return {"is_party_list": True, "party_type": party_type, "items": items}
+
         rows = session.query(JournalLine, JournalEntry).join(
             JournalEntry, JournalEntry.id == JournalLine.entry_id
         ).filter(
@@ -258,6 +287,66 @@ async def sub_details(request: Request, code: str) -> dict:
             name = f"{date_str} — {line.description or entry.description or ''}"
             items.append({"name": name, "value": f"{sign}{line.amount:,.0f}"})
         return {"items": items}
+    finally:
+        session.close()
+
+
+@app.get("/party_statement")
+async def party_statement(request: Request, party_id: int, party_type: str) -> dict:
+    """صورت‌حساب کامل یک طرف‌حساب (مشتری/فروشنده) با مانده در گردش، به فرمت استاندارد حسابداری."""
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    if party_type not in ("customer", "vendor"):
+        return {"success": False, "message": "نوع طرف‌حساب نامعتبر است."}
+    from database.models import Account, Customer, JournalEntry, JournalLine, Vendor
+
+    session = engine.Session()
+    try:
+        model = Customer if party_type == "customer" else Vendor
+        party = session.query(model).filter_by(id=party_id, user_id=user_id).first()
+        if not party:
+            return {"success": False, "message": "طرف‌حساب یافت نشد."}
+
+        account_code = "1101" if party_type == "customer" else "2001"
+        party_field = JournalEntry.customer_id if party_type == "customer" else JournalEntry.vendor_id
+        rows = session.query(JournalLine, JournalEntry).join(
+            JournalEntry, JournalEntry.id == JournalLine.entry_id
+        ).join(
+            Account, Account.id == JournalLine.account_id
+        ).filter(
+            Account.code == account_code,
+            JournalEntry.user_id == user_id,
+            party_field == party_id,
+        ).order_by(JournalEntry.date.asc(), JournalEntry.id.asc()).all()
+
+        rows_out = []
+        balance = 0.0
+        total_debit = 0.0
+        total_credit = 0.0
+        for line, entry in rows:
+            debit = line.amount if line.side == "debit" else 0
+            credit = line.amount if line.side == "credit" else 0
+            balance += debit - credit
+            total_debit += debit
+            total_credit += credit
+            rows_out.append({
+                "date": entry.date.strftime("%Y/%m/%d") if entry.date else "",
+                "description": line.description or entry.description or "",
+                "debit": debit,
+                "credit": credit,
+                "balance": balance,
+            })
+
+        return {
+            "success": True,
+            "party_name": party.name,
+            "party_mobile": getattr(party, "mobile", "") or getattr(party, "phone", "") or "",
+            "rows": rows_out,
+            "total_debit": total_debit,
+            "total_credit": total_credit,
+            "closing_balance": balance,
+        }
     finally:
         session.close()
 
@@ -703,6 +792,7 @@ async def invoice_confirm(request: Request) -> dict:
                     description=f"خرید فاکتور {result['invoice_number']} از {party_name}",
                     lines=[("1201", result["total"], "debit"), ("2001", result["total"], "credit")],
                     user_id=user_id,
+                    vendor_id=party_id,
                 )
             elif document_type == "sale":
                 engine.create_voucher(
@@ -710,6 +800,7 @@ async def invoice_confirm(request: Request) -> dict:
                     description=f"فروش فاکتور {result['invoice_number']} به {party_name}",
                     lines=[("1101", result["total"], "debit"), ("4001", result["total"], "credit")],
                     user_id=user_id,
+                    customer_id=party_id,
                 )
             # برای "proforma" سند حسابداری ثبت نمی‌شود، چون فقط پیش‌نویس/استعلام قیمت است، نه تراکنش قطعی.
         except Exception:

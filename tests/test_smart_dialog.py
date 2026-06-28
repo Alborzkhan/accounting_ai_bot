@@ -1,3 +1,38 @@
+class TestCustomerBalance:
+    def test_process_customer_balance_is_per_customer_not_whole_account(self, dialog_engine, engine):
+        """رگرسیون: قبلاً مانده‌ی هر مشتری از کل حساب «بدهکاران تجاری» خوانده می‌شد،
+        یعنی دو مشتری مختلف همیشه یک عدد یکسان می‌گرفتند. الان باید مانده‌ی واقعی خودش باشد."""
+        from datetime import datetime
+        from database.models import Customer
+
+        session = engine.Session()
+        try:
+            c1 = Customer(user_id=1, name="علی کریمی")
+            c2 = Customer(user_id=1, name="مصطفی جعفری")
+            session.add_all([c1, c2])
+            session.commit()
+            c1_id, c2_id = c1.id, c2.id
+        finally:
+            session.close()
+
+        engine.create_voucher(
+            date=datetime.now(), description="فروش به علی کریمی",
+            lines=[('1101', 1_000_000, 'debit'), ('4001', 1_000_000, 'credit')],
+            user_id=1, customer_id=c1_id,
+        )
+        engine.create_voucher(
+            date=datetime.now(), description="فروش به مصطفی جعفری",
+            lines=[('1101', 5_000_000, 'debit'), ('4001', 5_000_000, 'credit')],
+            user_id=1, customer_id=c2_id,
+        )
+
+        result1 = dialog_engine.process_customer_balance({'customer_name': 'علی کریمی'}, user_id=1)
+        result2 = dialog_engine.process_customer_balance({'customer_name': 'مصطفی جعفری'}, user_id=1)
+        assert result1["success"] and result2["success"]
+        assert "1,000,000" in result1["message"]
+        assert "5,000,000" in result2["message"]
+
+
 class TestSmartDialogIntent:
     def test_detect_payment_received(self, dialog_engine):
         result = dialog_engine.detect_intent("مشتری علی کریمی 500 هزار پول زد")

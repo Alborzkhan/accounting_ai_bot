@@ -90,6 +90,8 @@ class JournalEntry(Base):
     reference_no = Column(String(50))
     created_at = Column(DateTime, default=datetime.now)
     user_id = Column(Integer, default=1)
+    customer_id = Column(Integer, ForeignKey('customers.id'), nullable=True)
+    vendor_id = Column(Integer, ForeignKey('vendors.id'), nullable=True)
 
 class JournalLine(Base):
     __tablename__ = 'journal_lines'
@@ -260,6 +262,10 @@ def init_db(db_path="accounting.db"):
     ])
     _ensure_columns(engine, "customers", [
         ("user_id", "INTEGER"),
+    ])
+    _ensure_columns(engine, "journal_entries", [
+        ("customer_id", "INTEGER"),
+        ("vendor_id", "INTEGER"),
     ])
 
     Session = sessionmaker(bind=engine)

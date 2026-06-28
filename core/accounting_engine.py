@@ -84,7 +84,11 @@ class AccountingEngine:
         finally:
             session.close()
 
-    def create_voucher(self, date: datetime, description: str, lines: List[Tuple[str, float, str]], reference_no: Optional[str] = None, user_id: Optional[int] = None) -> int:
+    def create_voucher(
+        self, date: datetime, description: str, lines: List[Tuple[str, float, str]],
+        reference_no: Optional[str] = None, user_id: Optional[int] = None,
+        customer_id: Optional[int] = None, vendor_id: Optional[int] = None,
+    ) -> int:
         total_debit = sum(amt for _, amt, side in lines if side == 'debit')
         total_credit = sum(amt for _, amt, side in lines if side == 'credit')
 
@@ -101,7 +105,9 @@ class AccountingEngine:
                 description=description,
                 reference_no=reference_no,
                 created_at=datetime.now(),
-                user_id=user_id if user_id is not None else 1
+                user_id=user_id if user_id is not None else 1,
+                customer_id=customer_id,
+                vendor_id=vendor_id,
             )
             session.add(entry)
             session.flush()

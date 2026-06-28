@@ -92,6 +92,38 @@ class TestVoucher:
                 lines=[('1201', 5000000, 'debit'), ('2001', 3000000, 'credit')]
             )
 
+    def test_create_voucher_links_customer_id(self, engine):
+        """رگرسیون: صورت‌حساب طرف‌حساب باید بتواند اسناد مربوط به یک مشتری خاص را پیدا کند،
+        که نیاز به ذخیره‌ی customer_id روی خود سند دارد (قبلاً چنین فیلدی وجود نداشت)."""
+        from database.models import JournalEntry
+        eid = engine.create_voucher(
+            date=datetime.now(), description="فروش به مشتری",
+            lines=[('1101', 1000000, 'debit'), ('4001', 1000000, 'credit')],
+            customer_id=42,
+        )
+        session = engine.Session()
+        try:
+            entry = session.query(JournalEntry).filter_by(id=eid).first()
+            assert entry.customer_id == 42
+            assert entry.vendor_id is None
+        finally:
+            session.close()
+
+    def test_create_voucher_links_vendor_id(self, engine):
+        from database.models import JournalEntry
+        eid = engine.create_voucher(
+            date=datetime.now(), description="خرید از تامین‌کننده",
+            lines=[('1201', 1000000, 'debit'), ('2001', 1000000, 'credit')],
+            vendor_id=7,
+        )
+        session = engine.Session()
+        try:
+            entry = session.query(JournalEntry).filter_by(id=eid).first()
+            assert entry.vendor_id == 7
+            assert entry.customer_id is None
+        finally:
+            session.close()
+
     def test_create_voucher_invalid_account_raises(self, engine):
         import pytest
         with pytest.raises(ValueError, match="حساب با کد"):

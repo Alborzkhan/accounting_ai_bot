@@ -737,6 +737,30 @@
     </div>
 </div>
 
+<div id="partyStatementSheet" class="sheet" style="max-width:520px;">
+    <div class="modal-title" id="partyStatementTitle">صورت‌حساب</div>
+    <div id="partyStatementInfo" class="hint-text" style="margin-bottom:10px;"></div>
+    <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
+        <table id="partyStatementTable" style="width:100%; border-collapse:collapse; font-size:12.5px; direction:rtl;">
+            <thead>
+                <tr style="background:rgba(0,0,0,0.06);">
+                    <th style="padding:6px 4px; text-align:center;">ردیف</th>
+                    <th style="padding:6px 4px; text-align:center;">تاریخ</th>
+                    <th style="padding:6px 4px; text-align:right;">شرح</th>
+                    <th style="padding:6px 4px; text-align:center;">بدهکار</th>
+                    <th style="padding:6px 4px; text-align:center;">بستانکار</th>
+                    <th style="padding:6px 4px; text-align:center;">مانده</th>
+                </tr>
+            </thead>
+            <tbody id="partyStatementBody"></tbody>
+            <tfoot id="partyStatementFoot"></tfoot>
+        </table>
+    </div>
+    <div class="modal-buttons" style="margin-top:14px;">
+        <button class="modal-btn" id="closePartyStatementBtn">بستن</button>
+    </div>
+</div>
+
 <div id="jalaliPickerOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:9000;"></div>
 <div id="jalaliPickerModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:16px; padding:18px; z-index:9001; min-width:260px; box-shadow:0 10px 40px rgba(0,0,0,0.3);">
     <div class="modal-title" style="margin-bottom:12px;">انتخاب تاریخ</div>
@@ -1168,13 +1192,69 @@
         try {
             const res = await fetch(`/sub_details?code=${code}`);
             const data = await res.json();
-            if (data.items && data.items.length) {
+            if (data.is_party_list && data.items && data.items.length) {
+                container.innerHTML = data.items.map(item => `
+                    <div class="sub-detail-item party-row" data-party-id="${item.id}" data-party-type="${data.party_type}" style="cursor:pointer;">
+                        <span>👤 ${esc(item.name)}</span>
+                        <span>${item.value} تومان ›</span>
+                    </div>`).join('');
+                container.querySelectorAll('.party-row').forEach(row => {
+                    row.addEventListener('click', () => openPartyStatement(row.dataset.partyId, row.dataset.partyType));
+                });
+            } else if (data.items && data.items.length) {
                 let html = '';
                 data.items.forEach(item => { html += `<div class="sub-detail-item"><span>${item.name}</span><span>${item.value || '—'}</span></div>`; });
                 container.innerHTML = html;
             } else { container.innerHTML = '<div class="empty-sub">هیچ حساب تفصیلی ثبت نشده</div>'; }
         } catch (e) { container.innerHTML = '<div class="empty-sub">خطا در دریافت</div>'; }
     }
+
+    async function openPartyStatement(partyId, partyType) {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('partyStatementSheet').classList.add('active');
+        document.getElementById('partyStatementTitle').textContent = 'صورت‌حساب';
+        document.getElementById('partyStatementInfo').textContent = 'در حال بارگذاری...';
+        document.getElementById('partyStatementBody').innerHTML = '';
+        document.getElementById('partyStatementFoot').innerHTML = '';
+        try {
+            const res = await fetch(`/party_statement?party_id=${partyId}&party_type=${partyType}`);
+            const data = await res.json();
+            if (!data.success) {
+                document.getElementById('partyStatementInfo').textContent = msgOf(data, 'خطا در دریافت صورت‌حساب');
+                return;
+            }
+            document.getElementById('partyStatementTitle').textContent = `صورت‌حساب ${data.party_name}`;
+            document.getElementById('partyStatementInfo').textContent = data.party_mobile ? `تلفن: ${data.party_mobile}` : '';
+            const body = document.getElementById('partyStatementBody');
+            if (!data.rows.length) {
+                body.innerHTML = '<tr><td colspan="6" style="padding:12px; text-align:center;">هیچ تراکنشی ثبت نشده</td></tr>';
+            } else {
+                body.innerHTML = data.rows.map((r, i) => `
+                    <tr style="border-bottom:1px solid rgba(0,0,0,0.08);">
+                        <td style="padding:6px 4px; text-align:center;">${i + 1}</td>
+                        <td style="padding:6px 4px; text-align:center; white-space:nowrap;">${r.date}</td>
+                        <td style="padding:6px 4px; text-align:right;">${esc(r.description)}</td>
+                        <td style="padding:6px 4px; text-align:center;">${r.debit ? r.debit.toLocaleString() : '—'}</td>
+                        <td style="padding:6px 4px; text-align:center;">${r.credit ? r.credit.toLocaleString() : '—'}</td>
+                        <td style="padding:6px 4px; text-align:center; font-weight:600;">${r.balance.toLocaleString()}</td>
+                    </tr>`).join('');
+            }
+            document.getElementById('partyStatementFoot').innerHTML = `
+                <tr style="background:rgba(0,0,0,0.06); font-weight:700;">
+                    <td colspan="3" style="padding:8px 4px; text-align:right;">جمع کل</td>
+                    <td style="padding:8px 4px; text-align:center;">${data.total_debit.toLocaleString()}</td>
+                    <td style="padding:8px 4px; text-align:center;">${data.total_credit.toLocaleString()}</td>
+                    <td style="padding:8px 4px; text-align:center;">${data.closing_balance.toLocaleString()}</td>
+                </tr>`;
+        } catch (e) {
+            document.getElementById('partyStatementInfo').textContent = 'خطا در ارتباط با سرور';
+        }
+    }
+    function closePartyStatementSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('partyStatementSheet').classList.remove('active');
+    }
+    document.getElementById('closePartyStatementBtn').onclick = closePartyStatementSheet;
 
     async function updateGross() {
         const res = await fetch('/trial_balance');
@@ -2276,7 +2356,7 @@
     function closeAllSheets() {
         closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet();
         closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet();
-        closeWelcomeGuideSheet(); closePricingSheet();
+        closeWelcomeGuideSheet(); closePricingSheet(); closePartyStatementSheet();
         if (document.getElementById('detailPage').classList.contains('active')) {
             document.getElementById('closeDetailBtn').click();
         }
