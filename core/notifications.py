@@ -1,13 +1,22 @@
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict
+from sqlalchemy.orm import sessionmaker
 from core.license_manager import LicenseManager
+from core.inventory_reconciler import InventoryReconciler
+from database.models import init_db
+from database.license_models import User
+
+INVENTORY_REMINDER_COOLDOWN_HOURS = 24
 
 class NotificationService:
     def __init__(self, db_path: str = "accounting.db") -> None:
         self.license_manager = LicenseManager(db_path)
+        self.inventory_reconciler = InventoryReconciler(db_path)
+        self.engine = init_db(db_path)
+        self.Session = sessionmaker(bind=self.engine)
 
     def check_renewal_reminder(self, user_id: int) -> Optional[str]:
         status = self.license_manager.check_license(user_id)
@@ -41,3 +50,35 @@ class NotificationService:
             if remaining <= 0:
                 return f"❌ سقف مجاز اسناد شما ({max_v} سند) به پایان رسیده است. لطفاً اشتراک خود را تمدید کنید."
         return None
+
+    def get_inventory_deficit_reminder(self, user_id: int) -> Optional[str]:
+        """یادآوری دوره‌ای (هر ۲۴ ساعت حداکثر یک‌بار) برای کالاهایی که فروخته شده‌اند
+        ولی هنوز فاکتور خرید یا موجودی اول دوره‌ای برایشان ثبت نشده."""
+        session = self.Session()
+        try:
+            user = session.query(User).filter_by(id=user_id).first()
+            if not user:
+                return None
+            now = datetime.now()
+            if user.last_inventory_reminder_at and (now - user.last_inventory_reminder_at) < timedelta(hours=INVENTORY_REMINDER_COOLDOWN_HOURS):
+                return None
+
+            deficits = self.inventory_reconciler.get_all_deficits(user_id)
+            if not deficits:
+                return None
+
+            user.last_inventory_reminder_at = now
+            session.commit()
+
+            lines = [
+                f"  • «{d['product_name']}»: {d['deficit']:,.0f} بیش از خرید/موجودی اول دوره فروخته شده"
+                for d in deficits[:5]
+            ]
+            more = f"\n  …و {len(deficits) - 5} کالای دیگر" if len(deficits) > 5 else ""
+            return (
+                "📦 یادآوری: هنوز برای این کالاها فاکتور خریدی ثبت نکرده‌اید:\n"
+                + "\n".join(lines) + more +
+                "\n\nاگر این کالا را قبلاً (قبل از استفاده از نارین) خریده بودید، می‌توانید موجودی اول دوره‌اش را ثبت کنید."
+            )
+        finally:
+            session.close()

@@ -173,6 +173,18 @@ class Product(Base):
     category = Column(String(50))
     created_at = Column(DateTime, default=datetime.now)
 
+class OpeningStockBalance(Base):
+    """موجودی اول دوره‌ی هر کالا برای هر کاربر - برای کالایی که قبل از استفاده از سیستم موجود بوده،
+    بدون اینکه فاکتور خریدی برایش در سیستم ثبت شده باشد."""
+    __tablename__ = 'opening_stock_balances'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    product_name = Column(String(200), nullable=False)
+    quantity = Column(Float, default=0)
+    unit = Column(String(20), default="عدد")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
 class ProductCategory(Base):
     __tablename__ = 'product_categories'
     id = Column(Integer, primary_key=True)
@@ -237,6 +249,7 @@ def init_db(db_path="accounting.db"):
         ("otp_attempts", "INTEGER DEFAULT 0"),
         ("otp_requested_at", "DATETIME"),
         ("company_registration_number", "VARCHAR(50)"),
+        ("last_inventory_reminder_at", "DATETIME"),
     ])
     _ensure_columns(engine, "seller_profiles", [
         ("user_id", "INTEGER"),

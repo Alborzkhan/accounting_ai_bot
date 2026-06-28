@@ -31,6 +31,7 @@ class User(Base):
     otp_attempts = Column(Integer, default=0)
     otp_requested_at = Column(DateTime, nullable=True)
     company_registration_number = Column(String(50), nullable=True)
+    last_inventory_reminder_at = Column(DateTime, nullable=True)
 
 class License(Base):
     __tablename__ = 'licenses'

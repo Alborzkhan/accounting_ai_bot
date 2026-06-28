@@ -67,6 +67,8 @@ license_manager = LicenseManager()
 payment_gateway = PaymentGateway()
 invoice_generator = InvoiceGenerator()
 inventory_reconciler = InventoryReconciler()
+from core.notifications import NotificationService
+notifier = NotificationService()
 platform_settings = PlatformSettingsManager()
 building_manager = BuildingManager()
 invoice_pdf_maker = InvoicePDF()
@@ -214,6 +216,22 @@ async def process_voice(request: Request, voice: UploadFile = File(...)) -> dict
         return {"success": False, "message": "خطا در پردازش صدا. لطفاً دوباره تلاش کنید."}
 
 # تراز آزمایشی
+@app.get("/notifications/check")
+async def notifications_check(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"messages": []}
+    messages = []
+    for msg in (
+        notifier.check_renewal_reminder(user_id),
+        notifier.get_voucher_limit_warning(user_id),
+        notifier.get_inventory_deficit_reminder(user_id),
+    ):
+        if msg:
+            messages.append(msg)
+    return {"messages": messages}
+
+
 @app.get("/trial_balance")
 async def get_trial_balance(request: Request, date_from: str = "", date_to: str = "") -> dict:
     user_id = get_user_id(request)
@@ -896,6 +914,73 @@ async def invoice_party_lookup(request: Request, name: str = "", party_type: str
             "address": getattr(r, "address", "") or "",
         } for r in rows]
         return {"success": True, "data": data}
+    finally:
+        session.close()
+
+
+@app.get("/inventory/opening-balances")
+async def list_opening_balances(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "data": []}
+    from database.models import OpeningStockBalance
+    session = engine.Session()
+    try:
+        rows = session.query(OpeningStockBalance).filter_by(user_id=user_id).order_by(OpeningStockBalance.product_name).all()
+        return {"success": True, "data": [
+            {"id": r.id, "product_name": r.product_name, "quantity": r.quantity, "unit": r.unit} for r in rows
+        ]}
+    finally:
+        session.close()
+
+
+@app.post("/inventory/opening-balance")
+async def set_opening_balance(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    payload = await request.json()
+    product_name = (payload.get("product_name") or "").strip()
+    unit = (payload.get("unit") or "عدد").strip() or "عدد"
+    try:
+        quantity = float(payload.get("quantity") or 0)
+    except (TypeError, ValueError):
+        quantity = 0
+    if not product_name:
+        return {"success": False, "message": "نام کالا را وارد کنید."}
+    if quantity <= 0:
+        return {"success": False, "message": "مقدار موجودی باید بیشتر از صفر باشد."}
+
+    from database.models import OpeningStockBalance
+    session = engine.Session()
+    try:
+        row = session.query(OpeningStockBalance).filter_by(user_id=user_id, product_name=product_name).first()
+        if row:
+            row.quantity = quantity
+            row.unit = unit
+        else:
+            row = OpeningStockBalance(user_id=user_id, product_name=product_name, quantity=quantity, unit=unit)
+            session.add(row)
+        session.commit()
+        return {"success": True, "message": f"موجودی اول دوره‌ی «{product_name}» ثبت شد."}
+    finally:
+        session.close()
+
+
+@app.post("/inventory/opening-balance/{balance_id}/delete")
+async def delete_opening_balance(request: Request, balance_id: int) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    from database.models import OpeningStockBalance
+    session = engine.Session()
+    try:
+        row = session.query(OpeningStockBalance).filter_by(id=balance_id, user_id=user_id).first()
+        if not row:
+            return {"success": False, "message": "یافت نشد."}
+        session.delete(row)
+        session.commit()
+        return {"success": True}
     finally:
         session.close()
 

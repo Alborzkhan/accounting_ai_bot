@@ -603,6 +603,9 @@ class TelegramBot:
         limit_msg = self.notifier.get_voucher_limit_warning(user_id)
         if limit_msg:
             await update.message.reply_text(limit_msg)
+        inventory_msg = self.notifier.get_inventory_deficit_reminder(user_id)
+        if inventory_msg:
+            await update.message.reply_text(inventory_msg)
 
     def run(self) -> None:
         app = Application.builder().token(TELEGRAM_TOKEN).build()

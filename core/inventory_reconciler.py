@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from typing import Dict, List
 from sqlalchemy import func
 from sqlalchemy.orm import sessionmaker
-from database.models import init_db, InvoiceItem, ProformaInvoice, PurchaseItem, PurchaseInvoice
+from database.models import init_db, InvoiceItem, ProformaInvoice, PurchaseItem, PurchaseInvoice, OpeningStockBalance
 
 
 class InventoryReconciler:
@@ -44,8 +44,16 @@ class InventoryReconciler:
         finally:
             session.close()
 
+    def get_opening_balance(self, session, user_id: int, product_name: str) -> float:
+        row = session.query(OpeningStockBalance).filter(
+            OpeningStockBalance.user_id == user_id,
+            OpeningStockBalance.product_name == product_name,
+        ).first()
+        return float(row.quantity) if row else 0.0
+
     def get_general_balance(self, user_id: int, product_name: str) -> Dict:
-        """مثل get_official_balance ولی بدون فیلتر رسمی/غیررسمی - خرید و فروش کل این کالا برای این کاربر."""
+        """مثل get_official_balance ولی بدون فیلتر رسمی/غیررسمی - خرید و فروش کل این کالا برای این کاربر.
+        موجودی اول دوره هم به‌عنوان معادل خرید قبلی لحاظ می‌شود."""
         session = self.Session()
         try:
             purchased = session.query(func.coalesce(func.sum(PurchaseItem.quantity), 0)).join(
@@ -54,6 +62,8 @@ class InventoryReconciler:
                 PurchaseInvoice.user_id == user_id,
                 PurchaseItem.description == product_name,
             ).scalar() or 0
+            opening = self.get_opening_balance(session, user_id, product_name)
+            purchased = float(purchased) + opening
 
             sold = session.query(func.coalesce(func.sum(InvoiceItem.quantity), 0)).join(
                 ProformaInvoice, InvoiceItem.invoice_id == ProformaInvoice.id
@@ -71,6 +81,29 @@ class InventoryReconciler:
             }
         finally:
             session.close()
+
+    def get_all_deficits(self, user_id: int) -> List[Dict]:
+        """لیست همه‌ی کالاهایی که برای این کاربر، فروش‌شان از خرید + موجودی اول دوره‌شان بیشتر است
+        (یعنی همچنان فاکتور خریدی برایشان ثبت نشده) - برای یادآوری دوره‌ای."""
+        session = self.Session()
+        try:
+            product_names = [
+                row[0] for row in session.query(InvoiceItem.description).join(
+                    ProformaInvoice, InvoiceItem.invoice_id == ProformaInvoice.id
+                ).filter(
+                    ProformaInvoice.user_id == user_id,
+                    ProformaInvoice.document_type != "proforma",
+                ).distinct().all()
+            ]
+        finally:
+            session.close()
+
+        deficits = []
+        for name in product_names:
+            balance = self.get_general_balance(user_id, name)
+            if balance["deficit"] > 0:
+                deficits.append(balance)
+        return deficits
 
     def check_sale_items_general(self, user_id: int, items: List[Dict]) -> List[str]:
         """قبل از ثبت هر فاکتور فروش (رسمی یا نه)، بررسی می‌کند که آیا این کالا تا به حال اصلاً خریداری شده یا نه،

@@ -108,6 +108,30 @@ class TestCheckSaleItemsGeneral:
         warnings = reconciler.check_sale_items_general(1, [{"description": "میز اداری", "quantity": 5, "unit": "عدد"}])
         assert len(warnings) == 1
 
+    def test_opening_balance_avoids_warning_with_no_purchase_history(self, reconciler):
+        """موجودی اول دوره باید معادل خرید قبلی لحاظ شود تا کالایی که قبل از نارین موجود بوده،
+        هشدار «فاکتور خرید ندارد» نگیرد."""
+        from database.models import OpeningStockBalance
+        session = reconciler.Session()
+        try:
+            session.add(OpeningStockBalance(user_id=1, product_name="میز اداری", quantity=10, unit="عدد"))
+            session.commit()
+        finally:
+            session.close()
+        warnings = reconciler.check_sale_items_general(1, [{"description": "میز اداری", "quantity": 5, "unit": "عدد"}])
+        assert warnings == []
+
+    def test_opening_balance_does_not_fully_cover_excess_sale(self, reconciler):
+        from database.models import OpeningStockBalance
+        session = reconciler.Session()
+        try:
+            session.add(OpeningStockBalance(user_id=1, product_name="میز اداری", quantity=3, unit="عدد"))
+            session.commit()
+        finally:
+            session.close()
+        warnings = reconciler.check_sale_items_general(1, [{"description": "میز اداری", "quantity": 5, "unit": "عدد"}])
+        assert len(warnings) == 1
+
     def test_proforma_sales_do_not_count_against_stock(self, invoice_gen, reconciler):
         vendor_id = invoice_gen.find_or_create_vendor("تامین‌کننده الف")
         invoice_gen.create_purchase_invoice(
@@ -125,3 +149,44 @@ class TestCheckSaleItemsGeneral:
         # پیش‌فاکتور قبلی نباید به‌عنوان «فروش شده» حساب شود، پس فروش واقعی هنوز باید مجاز باشد
         warnings = reconciler.check_sale_items_general(1, [{"description": "میز اداری", "quantity": 5, "unit": "عدد"}])
         assert warnings == []
+
+
+class TestGetAllDeficits:
+    def test_finds_product_sold_without_any_purchase(self, invoice_gen, reconciler):
+        customer_id = invoice_gen.find_or_create_customer("مشتری الف", user_id=1)
+        invoice_gen.create_invoice(
+            customer_id=customer_id,
+            items=[{"description": "میز اداری", "quantity": 5, "unit": "عدد", "unit_price": 150000}],
+            user_id=1,
+            document_type="sale",
+        )
+        deficits = reconciler.get_all_deficits(1)
+        assert len(deficits) == 1
+        assert deficits[0]["product_name"] == "میز اداری"
+        assert deficits[0]["deficit"] == 5
+
+    def test_no_deficit_once_fully_purchased(self, invoice_gen, reconciler):
+        vendor_id = invoice_gen.find_or_create_vendor("تامین‌کننده الف")
+        invoice_gen.create_purchase_invoice(
+            vendor_id=vendor_id,
+            items=[{"description": "میز اداری", "quantity": 10, "unit": "عدد", "unit_price": 100000}],
+            user_id=1,
+        )
+        customer_id = invoice_gen.find_or_create_customer("مشتری الف", user_id=1)
+        invoice_gen.create_invoice(
+            customer_id=customer_id,
+            items=[{"description": "میز اداری", "quantity": 5, "unit": "عدد", "unit_price": 150000}],
+            user_id=1,
+            document_type="sale",
+        )
+        assert reconciler.get_all_deficits(1) == []
+
+    def test_isolated_per_user(self, invoice_gen, reconciler):
+        customer_id = invoice_gen.find_or_create_customer("مشتری الف", user_id=1)
+        invoice_gen.create_invoice(
+            customer_id=customer_id,
+            items=[{"description": "میز اداری", "quantity": 5, "unit": "عدد", "unit_price": 150000}],
+            user_id=1,
+            document_type="sale",
+        )
+        assert reconciler.get_all_deficits(2) == []

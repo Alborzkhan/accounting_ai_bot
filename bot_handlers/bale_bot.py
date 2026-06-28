@@ -355,6 +355,9 @@ class BaleBot:
         limit_msg = self.notifier.get_voucher_limit_warning(user_id)
         if limit_msg:
             self.send_message(chat_id, limit_msg)
+        inventory_msg = self.notifier.get_inventory_deficit_reminder(user_id)
+        if inventory_msg:
+            self.send_message(chat_id, inventory_msg)
 
     def handle_status(self, chat_id: int, user_id: int):
         status = self.license_manager.check_license(user_id)

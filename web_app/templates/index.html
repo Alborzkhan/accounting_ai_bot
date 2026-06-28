@@ -590,10 +590,30 @@
     <div class="hint-text">همه فیلدهای بالا اختیاری هستند و فقط برای فاکتور رسمی استفاده می‌شوند.</div>
 
     <button class="modal-btn" type="button" id="openFiscalYearBtn" style="margin-bottom:10px;">📕 بستن سال مالی</button>
+    <button class="modal-btn" type="button" id="openOpeningBalanceBtn" style="margin-bottom:10px;">📦 موجودی اول دوره کالاها</button>
 
     <div class="modal-buttons">
         <button class="modal-btn" id="closeSettingsBtn">بستن</button>
         <button class="modal-btn modal-btn-primary" id="saveSettingsBtn">ذخیره</button>
+    </div>
+</div>
+
+<div id="openingBalanceSheet" class="sheet">
+    <div class="modal-title">موجودی اول دوره کالاها</div>
+    <div class="hint-text" style="margin-bottom:10px;">برای کالایی که قبل از استفاده از نارین موجود بوده و فاکتور خریدی برایش در سیستم ثبت نمی‌شود، مقدار موجودی اولش را اینجا وارد کنید تا هشدار «فاکتور خرید ندارد» برایش نمایش داده نشود.</div>
+    <datalist id="openingBalanceProductList"></datalist>
+    <div class="form-row"><label>نام کالا</label><input id="obProductName" type="text" list="openingBalanceProductList"></div>
+    <div class="form-grid-2">
+        <div class="form-row"><label>مقدار</label><input id="obQuantity" type="number"></div>
+        <div class="form-row"><label>واحد</label><input id="obUnit" type="text" value="عدد"></div>
+    </div>
+    <button class="modal-btn modal-btn-primary" type="button" id="saveOpeningBalanceBtn" style="margin-bottom:14px;">ثبت/به‌روزرسانی</button>
+
+    <div class="hint-text" style="font-weight:600; margin-bottom:6px;">موجودی‌های ثبت‌شده</div>
+    <div id="openingBalanceList" class="sub-detail-list"></div>
+
+    <div class="modal-buttons">
+        <button class="modal-btn" id="closeOpeningBalanceBtn">بستن</button>
     </div>
 </div>
 
@@ -1043,6 +1063,15 @@
         fetchBusiness();
         updateGross();
         if (isNew) openWelcomeGuideSheet();
+        else checkNotifications();
+    }
+
+    async function checkNotifications() {
+        try {
+            const res = await fetch('/notifications/check');
+            const data = await res.json();
+            (data.messages || []).forEach(msg => showToast(msg, false));
+        } catch (e) { /* بی‌صدا - اعلان مهم نیست که خطا بدهد */ }
     }
 
     async function checkAuthAndInit() {
@@ -1468,6 +1497,66 @@
         document.getElementById('overlay').classList.remove('active');
         document.getElementById('settingsSheet').classList.remove('active');
     }
+
+    function openOpeningBalanceSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('openingBalanceSheet').classList.add('active');
+        document.getElementById('obProductName').value = '';
+        document.getElementById('obQuantity').value = '';
+        document.getElementById('obUnit').value = 'عدد';
+        document.getElementById('openingBalanceProductList').innerHTML =
+            itemSuggestions.map(s => `<option value="${esc(s.description)}">`).join('');
+        loadOpeningBalances();
+    }
+    function closeOpeningBalanceSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('openingBalanceSheet').classList.remove('active');
+    }
+    document.getElementById('openOpeningBalanceBtn').onclick = openOpeningBalanceSheet;
+    document.getElementById('closeOpeningBalanceBtn').onclick = closeOpeningBalanceSheet;
+
+    async function loadOpeningBalances() {
+        const list = document.getElementById('openingBalanceList');
+        list.innerHTML = 'در حال بارگذاری...';
+        try {
+            const res = await fetch('/inventory/opening-balances');
+            const data = await res.json();
+            const rows = data.data || [];
+            list.innerHTML = rows.length ? rows.map(r => `
+                <div class="sub-detail-item">
+                    <span>${esc(r.product_name)}</span>
+                    <span>${r.quantity.toLocaleString()} ${esc(r.unit)}
+                        <button type="button" class="line-remove" data-id="${r.id}" style="margin-right:8px;">×</button>
+                    </span>
+                </div>`).join('') : '<div class="empty-sub">هیچ موجودی اول دوره‌ای ثبت نشده</div>';
+            list.querySelectorAll('.line-remove').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    await fetch(`/inventory/opening-balance/${btn.dataset.id}/delete`, { method: 'POST' });
+                    loadOpeningBalances();
+                });
+            });
+        } catch (e) { list.innerHTML = '<div class="empty-sub">خطا در دریافت</div>'; }
+    }
+
+    document.getElementById('saveOpeningBalanceBtn').onclick = async () => {
+        const product_name = document.getElementById('obProductName').value.trim();
+        const quantity = parseFloat(document.getElementById('obQuantity').value) || 0;
+        const unit = document.getElementById('obUnit').value.trim() || 'عدد';
+        if (!product_name || quantity <= 0) { showToast('نام کالا و مقدار معتبر وارد کنید', true); return; }
+        try {
+            const res = await fetch('/inventory/opening-balance', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ product_name, quantity, unit }),
+            });
+            const data = await res.json();
+            showToast(msgOf(data, 'خطا'), !data.success);
+            if (data.success) {
+                document.getElementById('obProductName').value = '';
+                document.getElementById('obQuantity').value = '';
+                loadOpeningBalances();
+            }
+        } catch (e) { showToast('خطا در ارتباط با سرور', true); }
+    };
     function updateBuildingSettingsButton() {
         const isBuilding = document.getElementById('businessTypeSelect').value === 'مدیریت آپارتمان‌ها';
         document.getElementById('openBuildingFromSettingsBtn').style.display = isBuilding ? 'block' : 'none';
@@ -2356,7 +2445,7 @@
     function closeAllSheets() {
         closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet();
         closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet();
-        closeWelcomeGuideSheet(); closePricingSheet(); closePartyStatementSheet();
+        closeWelcomeGuideSheet(); closePricingSheet(); closePartyStatementSheet(); closeOpeningBalanceSheet();
         if (document.getElementById('detailPage').classList.contains('active')) {
             document.getElementById('closeDetailBtn').click();
         }
