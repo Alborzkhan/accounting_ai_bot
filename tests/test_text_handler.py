@@ -17,10 +17,20 @@ class TestTextCommandHandler:
         assert result["success"] is True
         assert result["data"]["type"] == "خرید"
 
+    def test_parse_purchase_credits_creditors_not_capital(self, handler):
+        """رگرسیون: قبلاً سمت بستانکار «خرید» به اشتباه حساب ۳۰۰۱ (سرمایه) بود، نه ۲۰۰۱
+        (بستانکاران تجاری) - یعنی هر خرید نسیه، عملاً به‌عنوان آوردن سرمایه توسط صاحب کسب‌وکار ثبت می‌شد."""
+        result = handler.parse_and_create_voucher("خرید 100 عدد خودکار 5000 تومان")
+        assert result["data"]["credit_account"] == "2001"
+
     def test_parse_payment(self, handler):
         result = handler.parse_and_create_voucher("پرداخت 100000 تومان به تامین کننده")
         assert result["success"] is True
         assert result["data"]["type"] == "پرداخت"
+
+    def test_parse_payment_debits_creditors_not_capital(self, handler):
+        result = handler.parse_and_create_voucher("پرداخت 100000 تومان به تامین کننده")
+        assert result["data"]["debit_account"] == "2001"
 
     def test_parse_receipt(self, handler):
         result = handler.parse_and_create_voucher("دریافت 500000 تومان از مشتری")

@@ -1918,6 +1918,8 @@
                 document.getElementById('invoiceDoneMessage').textContent = data.message;
                 document.getElementById('invoicePdfLink').dataset.invoiceId = data.invoice_id;
                 document.getElementById('invoicePdfLink').dataset.docType = payload.document_type === 'purchase' ? 'purchase' : 'sale';
+                updateGross();
+                fetchAccounts();
             } else if (data.warning) {
                 pendingForceConfirm = true;
                 warnBox.style.display = 'block';

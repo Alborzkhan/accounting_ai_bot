@@ -30,14 +30,14 @@ class TextCommandHandler:
         if "خرید" in text:
             result["data"]["type"] = "خرید"
             result["data"]["debit_account"] = "1201"  # موجودی کالا
-            result["data"]["credit_account"] = "3001"  # بستانکاران تجاری
+            result["data"]["credit_account"] = "2001"  # بستانکاران تجاری
         elif "فروش" in text:
             result["data"]["type"] = "فروش"
             result["data"]["debit_account"] = "1101"  # بدهکاران تجاری
             result["data"]["credit_account"] = "4001"  # فروش کالا
         elif "پرداخت" in text:
             result["data"]["type"] = "پرداخت"
-            result["data"]["debit_account"] = "3001"  # بستانکاران تجاری
+            result["data"]["debit_account"] = "2001"  # بستانکاران تجاری
             result["data"]["credit_account"] = "1001"  # صندوق
         elif "دریافت" in text:
             result["data"]["type"] = "دریافت"
