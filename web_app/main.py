@@ -252,7 +252,10 @@ async def get_trial_balance(request: Request, date_from: str = "", date_to: str 
     return {"data": data}
 
 # جزئیات تفصیلی یک حساب (آخرین گردش‌ها)
-PARTY_ACCOUNT_CODES = {"1101": "customer", "2001": "vendor"}
+PARTY_ACCOUNT_CODES = {
+    "1101": "customer", "1102": "customer", "1103": "customer", "1601": "customer",
+    "2001": "vendor", "2002": "vendor",
+}
 
 
 @app.get("/sub_details")
@@ -326,14 +329,14 @@ async def party_statement(request: Request, party_id: int, party_type: str) -> d
         if not party:
             return {"success": False, "message": "طرف‌حساب یافت نشد."}
 
-        account_code = "1101" if party_type == "customer" else "2001"
+        account_codes = [c for c, t in PARTY_ACCOUNT_CODES.items() if t == party_type]
         party_field = JournalEntry.customer_id if party_type == "customer" else JournalEntry.vendor_id
         rows = session.query(JournalLine, JournalEntry).join(
             JournalEntry, JournalEntry.id == JournalLine.entry_id
         ).join(
             Account, Account.id == JournalLine.account_id
         ).filter(
-            Account.code == account_code,
+            Account.code.in_(account_codes),
             JournalEntry.user_id == user_id,
             party_field == party_id,
         ).order_by(JournalEntry.date.asc(), JournalEntry.id.asc()).all()
