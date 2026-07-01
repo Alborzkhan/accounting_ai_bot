@@ -239,6 +239,72 @@ CASH_ACCOUNTS = {
 }
 
 
+@app.get("/bank_accounts")
+async def list_bank_accounts(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "data": []}
+    from database.models import BankAccount
+    session = engine.Session()
+    try:
+        rows = session.query(BankAccount).filter_by(user_id=user_id).order_by(BankAccount.is_default.desc(), BankAccount.id).all()
+        return {"success": True, "data": [{
+            "id": r.id, "display_name": r.display_name, "account_type": r.account_type,
+            "gl_code": r.gl_code, "bank_name": r.bank_name or "", "account_number": r.account_number or "",
+            "iban": r.iban or "", "card_number": r.card_number or "", "is_default": r.is_default,
+        } for r in rows]}
+    finally:
+        session.close()
+
+
+@app.post("/bank_account")
+async def add_bank_account(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    p = await request.json()
+    display_name = (p.get("display_name") or "").strip()
+    if not display_name:
+        return {"success": False, "message": "نام نمایشی حساب را وارد کنید."}
+    from database.models import BankAccount
+    session = engine.Session()
+    try:
+        acc_type = p.get("account_type", "bank")
+        gl_map = {"bank": "1002", "cash": "1001", "petty_cash": "1003"}
+        gl_code = p.get("gl_code") or gl_map.get(acc_type, "1002")
+        if p.get("is_default"):
+            session.query(BankAccount).filter_by(user_id=user_id, account_type=acc_type).update({"is_default": False})
+        row = BankAccount(
+            user_id=user_id, display_name=display_name, account_type=acc_type, gl_code=gl_code,
+            bank_name=p.get("bank_name") or "", account_number=p.get("account_number") or "",
+            iban=p.get("iban") or "", card_number=p.get("card_number") or "",
+            is_default=bool(p.get("is_default")),
+        )
+        session.add(row)
+        session.commit()
+        return {"success": True, "message": f"حساب «{display_name}» اضافه شد.", "id": row.id}
+    finally:
+        session.close()
+
+
+@app.post("/bank_account/{account_id}/delete")
+async def delete_bank_account(request: Request, account_id: int) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    from database.models import BankAccount
+    session = engine.Session()
+    try:
+        row = session.query(BankAccount).filter_by(id=account_id, user_id=user_id).first()
+        if not row:
+            return {"success": False, "message": "یافت نشد."}
+        session.delete(row)
+        session.commit()
+        return {"success": True}
+    finally:
+        session.close()
+
+
 @app.get("/cash_balances")
 async def cash_balances(request: Request) -> dict:
     """مانده‌ی فعلی صندوق، بانک و تنخواه برای کاربر جاری."""
@@ -274,6 +340,16 @@ async def cash_transaction(request: Request) -> dict:
         return {"success": False, "message": "مبلغ باید بیشتر از صفر باشد."}
     if not description:
         return {"success": False, "message": "شرح را وارد کنید."}
+    bank_account_id = payload.get("bank_account_id")
+    if bank_account_id:
+        from database.models import BankAccount
+        s = engine.Session()
+        try:
+            ba = s.query(BankAccount).filter_by(id=bank_account_id, user_id=user_id).first()
+            if ba:
+                to_acc = ba.gl_code
+        finally:
+            s.close()
     if not from_acc or not to_acc:
         return {"success": False, "message": "حساب مبدا و مقصد را انتخاب کنید."}
     try:

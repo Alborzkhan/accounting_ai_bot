@@ -173,6 +173,22 @@ class Product(Base):
     category = Column(String(50))
     created_at = Column(DateTime, default=datetime.now)
 
+class BankAccount(Base):
+    """حساب‌های بانکی، صندوق و تنخواه‌گردان کاربر — برای انتخاب هنگام ثبت تراکنش."""
+    __tablename__ = 'bank_accounts'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    account_type = Column(String(20), default="bank")  # bank | cash | petty_cash
+    display_name = Column(String(100), nullable=False)   # مثلاً: بانک ملت — حساب جاری
+    gl_code = Column(String(20), default="1002")        # کد حسابداری: 1001/1002/1003
+    bank_name = Column(String(80))
+    account_number = Column(String(50))
+    iban = Column(String(30))
+    card_number = Column(String(20))
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class OpeningStockBalance(Base):
     """موجودی اول دوره‌ی هر کالا برای هر کاربر - برای کالایی که قبل از استفاده از سیستم موجود بوده،
     بدون اینکه فاکتور خریدی برایش در سیستم ثبت شده باشد."""

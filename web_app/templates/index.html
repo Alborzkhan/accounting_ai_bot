@@ -212,11 +212,20 @@
         .expense-color { color: var(--expense); }
 
         /* شبکه آیکون‌ها مثل صفحه هوم آیفون */
-        .app-grid {
+        .app-grid-main {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .app-grid-secondary {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 14px;
+            gap: 10px;
             margin-bottom: 28px;
+            max-width: 80%;
+            margin-left: auto;
+            margin-right: auto;
         }
 
         .app-tile {
@@ -258,8 +267,9 @@
         .icon-orange { background: linear-gradient(135deg, #ffb84d, #e8741f); }
         .icon-green  { background: linear-gradient(135deg, #5ee7df, #1f9d6e); }
         .icon-gray   { background: linear-gradient(135deg, #b8c4d6, #6b7d99); }
-        .icon-teal   { background: linear-gradient(135deg, #2dd4bf, #0d9488); }
-        .icon-indigo { background: linear-gradient(135deg, #818cf8, #4338ca); }
+        .icon-teal    { background: linear-gradient(135deg, #2dd4bf, #0d9488); }
+        .icon-emerald { background: linear-gradient(135deg, #34d399, #059669); }
+        .icon-indigo  { background: linear-gradient(135deg, #818cf8, #4338ca); }
 
         .app-tile span { font-size: 11.5px; font-weight: 600; color: var(--ink); text-align: center; }
 
@@ -463,36 +473,25 @@
             </div>
         </div>
 
-        <div class="app-grid">
+        <!-- ردیف اول: ۵ آیکون اصلی -->
+        <div class="app-grid-main">
             <div class="app-tile" id="openVoucherBtn">
                 <div class="app-icon icon-blue">
                     <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v4h4"/><line x1="8.5" y1="12" x2="15.5" y2="12"/><line x1="8.5" y1="15.5" x2="15.5" y2="15.5"/></svg>
                 </div>
                 <span>ثبت سند</span>
             </div>
-            <div class="app-tile" id="voiceMainBtn">
-                <div class="app-icon icon-red">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/><line x1="8" y1="21" x2="16" y2="21"/></svg>
+            <div class="app-tile" id="cashTile">
+                <div class="app-icon icon-emerald">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><path d="M6 15h.01M10 15h4"/></svg>
                 </div>
-                <span>فرمان صوتی</span>
+                <span>صندوق/بانک</span>
             </div>
             <div class="app-tile" id="invoiceTile">
                 <div class="app-icon icon-teal">
                     <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v19l-2.2-1.4L14 21l-2-1.4L10 21l-1.8-1.4L6 21V2z"/><line x1="8.7" y1="7" x2="15.3" y2="7"/><line x1="8.7" y1="10.5" x2="15.3" y2="10.5"/><line x1="8.7" y1="14" x2="13" y2="14"/></svg>
                 </div>
-                <span>فاکتور و پیش‌فاکتور</span>
-            </div>
-            <div class="app-tile" id="pricingTile">
-                <div class="app-icon icon-purple">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l4-6h10l4 6-9 12L3 9z"/><path d="M3 9h18"/><path d="M9 3l3 6 3-6"/></svg>
-                </div>
-                <span>اشتراک من</span>
-            </div>
-            <div class="app-tile" id="settingsTile">
-                <div class="app-icon icon-gray">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M2.5 12h3M18.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/></svg>
-                </div>
-                <span>تنظیمات</span>
+                <span>فاکتور</span>
             </div>
             <div class="app-tile" id="reportsTile">
                 <div class="app-icon icon-green">
@@ -500,17 +499,32 @@
                 </div>
                 <span>گزارشات</span>
             </div>
+            <div class="app-tile" id="voiceMainBtn">
+                <div class="app-icon icon-red">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/><line x1="8" y1="21" x2="16" y2="21"/></svg>
+                </div>
+                <span>فرمان صوتی</span>
+            </div>
+        </div>
+        <!-- ردیف دوم: ۴ آیکون فرعی، وسط‌چین -->
+        <div class="app-grid-secondary">
+            <div class="app-tile" id="settingsTile">
+                <div class="app-icon icon-gray">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M2.5 12h3M18.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/></svg>
+                </div>
+                <span>تنظیمات</span>
+            </div>
             <div class="app-tile" id="profileTile">
                 <div class="app-icon icon-orange">
                     <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
                 </div>
                 <span>پروفایل</span>
             </div>
-            <div class="app-tile" id="cashTile">
-                <div class="app-icon icon-teal">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><path d="M6 15h.01M10 15h4"/></svg>
+            <div class="app-tile" id="pricingTile">
+                <div class="app-icon icon-purple">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l4-6h10l4 6-9 12L3 9z"/><path d="M3 9h18"/><path d="M9 3l3 6 3-6"/></svg>
                 </div>
-                <span>صندوق/بانک</span>
+                <span>اشتراک</span>
             </div>
             <div class="app-tile" id="supportTile">
                 <div class="app-icon icon-indigo">
@@ -605,36 +619,71 @@
 </div>
 
 <div id="cashSheet" class="sheet">
-    <div class="modal-title">💰 نقدینگی — صندوق / بانک / تنخواه</div>
+    <div class="modal-title">💰 صندوق / بانک / تنخواه</div>
 
-    <div id="cashBalancesDisplay" class="hint-text" style="margin-bottom:12px;">در حال بارگذاری...</div>
+    <!-- موجودی‌ها -->
+    <div id="cashBalancesDisplay" class="hint-text" style="margin-bottom:12px; line-height:2;">در حال بارگذاری...</div>
 
-    <div class="section-header" style="margin:10px 0 6px;"><h3 style="font-size:13px;">ثبت تراکنش</h3></div>
-    <div class="form-row"><label>شرح</label><input id="cashDesc" type="text" placeholder="مثلاً: واریز دریافتی مشتری به بانک"></div>
+    <!-- حساب‌های ثبت‌شده -->
+    <div class="section-header" style="margin:4px 0 6px;"><h3 style="font-size:13px;">حساب‌های من</h3></div>
+    <div id="bankAccountsList" class="hint-text" style="margin-bottom:8px;">در حال بارگذاری...</div>
+
+    <!-- افزودن حساب جدید -->
+    <details style="margin-bottom:14px;">
+        <summary style="cursor:pointer; font-size:13px; font-weight:600; color:var(--accent); padding:6px 0;">➕ افزودن حساب بانکی / صندوق / تنخواه</summary>
+        <div style="margin-top:8px; background:rgba(255,255,255,0.4); border-radius:12px; padding:10px;">
+            <div class="form-row"><label>نام نمایشی</label><input id="baDisplayName" type="text" placeholder="مثلاً: بانک ملت — حساب جاری"></div>
+            <div class="form-row">
+                <label>نوع حساب</label>
+                <select id="baType">
+                    <option value="bank">حساب بانکی</option>
+                    <option value="cash">صندوق</option>
+                    <option value="petty_cash">تنخواه‌گردان</option>
+                </select>
+            </div>
+            <div id="baBankFields">
+                <div class="form-row"><label>نام بانک</label><input id="baBankName" type="text" placeholder="مثلاً: بانک ملت"></div>
+                <div class="form-row"><label>شماره حساب</label><input id="baAccNum" type="text" dir="ltr"></div>
+                <div class="form-row"><label>شماره شبا (IBAN)</label><input id="baIban" type="text" dir="ltr" placeholder="IR..."></div>
+                <div class="form-row"><label>شماره کارت</label><input id="baCard" type="text" dir="ltr" placeholder="xxxx-xxxx-xxxx-xxxx"></div>
+            </div>
+            <label style="display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:8px;">
+                <input type="checkbox" id="baIsDefault"> پیش‌فرض این نوع حساب باشد
+            </label>
+            <button class="modal-btn modal-btn-primary" type="button" id="saveBankAccountBtn" style="width:100%;">ذخیره حساب</button>
+        </div>
+    </details>
+
+    <!-- ثبت تراکنش -->
+    <div class="section-header" style="margin:4px 0 6px;"><h3 style="font-size:13px;">ثبت تراکنش</h3></div>
+    <div class="form-row">
+        <label>شرح</label>
+        <div style="display:flex; gap:6px;">
+            <input id="cashDesc" type="text" placeholder="مثلاً: دریافت از مشتری به بانک" style="flex:1;">
+            <button type="button" id="cashVoiceBtn" class="modal-btn" style="padding:8px 12px; white-space:nowrap;">🎤</button>
+        </div>
+    </div>
     <div class="form-row"><label>مبلغ (تومان)</label><input id="cashAmount" type="number" placeholder="0"></div>
     <div class="form-grid-2">
         <div class="form-row">
-            <label>از حساب (مبدا)</label>
+            <label>از (مبدا)</label>
             <select id="cashFromAcc">
+                <option value="1101">بدهکاران — دریافت از مشتری</option>
                 <option value="1001">صندوق</option>
                 <option value="1002">بانک</option>
                 <option value="1003">تنخواه‌گردان</option>
-                <option value="1101">بدهکاران (دریافتی)</option>
-                <option value="4001">فروش</option>
+                <option value="4001">فروش (نقدی)</option>
+                <option value="2001">بستانکاران — تسویه</option>
             </select>
         </div>
         <div class="form-row">
-            <label>به حساب (مقصد)</label>
-            <select id="cashToAcc">
-                <option value="1002">بانک</option>
-                <option value="1001">صندوق</option>
-                <option value="1003">تنخواه‌گردان</option>
-                <option value="2001">بستانکاران (پرداخت)</option>
-                <option value="5101">هزینه</option>
+            <label>به (مقصد — حساب من)</label>
+            <select id="cashToAccSelect">
+                <option value="">— انتخاب کنید —</option>
             </select>
         </div>
     </div>
-    <button class="modal-btn modal-btn-primary" type="button" id="saveCashTransactionBtn" style="margin-bottom:14px;">ثبت سند</button>
+    <button class="modal-btn modal-btn-primary" type="button" id="saveCashTransactionBtn" style="margin-bottom:14px; width:100%;">ثبت سند</button>
 
     <div class="modal-buttons">
         <button class="modal-btn" id="closeCashSheetBtn">بستن</button>
@@ -2139,23 +2188,56 @@
     }
     document.getElementById('supportTile').onclick = openSupportSheet;
 
+    let bankAccountsCache = [];
+
+    async function loadBankAccountsData() {
+        try {
+            const res = await fetch('/bank_accounts');
+            const data = await res.json();
+            bankAccountsCache = data.data || [];
+            return bankAccountsCache;
+        } catch(e) { return []; }
+    }
+
+    function renderBankAccountsList(accounts) {
+        const el = document.getElementById('bankAccountsList');
+        const sel = document.getElementById('cashToAccSelect');
+        if (!accounts.length) {
+            el.innerHTML = '<div class="hint-text">هنوز حسابی ثبت نشده. از بخش بالا اضافه کنید.</div>';
+            sel.innerHTML = '<option value="">هنوز حسابی ثبت نشده</option>';
+            return;
+        }
+        const typeLabel = { bank: '🏦 بانک', cash: '💵 صندوق', petty_cash: '👛 تنخواه' };
+        el.innerHTML = accounts.map(a => `
+            <div class="sub-detail-item">
+                <span>${typeLabel[a.account_type]||''} <b>${esc(a.display_name)}</b>${a.bank_name ? ' — ' + esc(a.bank_name) : ''}${a.account_number ? '<br><small dir="ltr">' + esc(a.account_number) + '</small>' : ''}${a.iban ? '<br><small dir="ltr">' + esc(a.iban) + '</small>' : ''}</span>
+                <span><button type="button" class="line-remove" data-ba-id="${a.id}">×</button></span>
+            </div>`).join('');
+        el.querySelectorAll('.line-remove').forEach(btn => btn.addEventListener('click', async () => {
+            await fetch(`/bank_account/${btn.dataset.baId}/delete`, { method: 'POST' });
+            await loadBankAccountsData();
+            renderBankAccountsList(bankAccountsCache);
+        }));
+        sel.innerHTML = '<option value="">— انتخاب کنید —</option>' +
+            accounts.map(a => `<option value="${a.id}" data-gl="${a.gl_code}">${typeLabel[a.account_type]||''} ${esc(a.display_name)}</option>`).join('');
+    }
+
     async function openCashSheet() {
         document.getElementById('overlay').classList.add('active');
         document.getElementById('cashSheet').classList.add('active');
         const display = document.getElementById('cashBalancesDisplay');
         display.textContent = 'در حال بارگذاری...';
         try {
-            const res = await fetch('/cash_balances');
-            const data = await res.json();
-            if (data.success) {
-                display.innerHTML = data.data.map(acc => `
-                    <span style="display:inline-block; background:rgba(255,255,255,0.5); border-radius:10px; padding:6px 12px; margin:3px; font-size:13px;">
+            const [balRes, accounts] = await Promise.all([fetch('/cash_balances'), loadBankAccountsData()]);
+            const balData = await balRes.json();
+            if (balData.success) {
+                display.innerHTML = balData.data.map(acc => `
+                    <span style="display:inline-block; background:rgba(255,255,255,0.5); border-radius:10px; padding:5px 10px; margin:3px; font-size:12.5px;">
                         <b>${esc(acc.name)}</b>: ${acc.balance.toLocaleString()} تومان
                     </span>`).join('');
-            } else {
-                display.textContent = 'خطا در دریافت موجودی';
             }
-        } catch(e) { display.textContent = 'خطا در ارتباط با سرور'; }
+            renderBankAccountsList(accounts);
+        } catch(e) { display.textContent = 'خطا'; }
     }
     function closeCashSheet() {
         document.getElementById('overlay').classList.remove('active');
@@ -2163,17 +2245,48 @@
     }
     document.getElementById('cashTile').onclick = openCashSheet;
     document.getElementById('closeCashSheetBtn').onclick = closeCashSheet;
+
+    document.getElementById('baType').onchange = () => {
+        const isCash = document.getElementById('baType').value !== 'bank';
+        document.getElementById('baBankFields').style.display = isCash ? 'none' : 'block';
+    };
+
+    document.getElementById('saveBankAccountBtn').onclick = async () => {
+        const display_name = document.getElementById('baDisplayName').value.trim();
+        if (!display_name) { showToast('نام نمایشی را وارد کنید', true); return; }
+        const payload = {
+            display_name, account_type: document.getElementById('baType').value,
+            bank_name: document.getElementById('baBankName').value.trim(),
+            account_number: document.getElementById('baAccNum').value.trim(),
+            iban: document.getElementById('baIban').value.trim(),
+            card_number: document.getElementById('baCard').value.trim(),
+            is_default: document.getElementById('baIsDefault').checked,
+        };
+        try {
+            const res = await fetch('/bank_account', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+            const data = await res.json();
+            showToast(msgOf(data, 'خطا'), !data.success);
+            if (data.success) {
+                document.getElementById('baDisplayName').value = '';
+                const accounts = await loadBankAccountsData();
+                renderBankAccountsList(accounts);
+            }
+        } catch(e) { showToast('خطا در ارتباط با سرور', true); }
+    };
+
     document.getElementById('saveCashTransactionBtn').onclick = async () => {
         const desc = document.getElementById('cashDesc').value.trim();
         const amount = parseFloat(document.getElementById('cashAmount').value) || 0;
         const from_account = document.getElementById('cashFromAcc').value;
-        const to_account = document.getElementById('cashToAcc').value;
+        const toSelOpt = document.getElementById('cashToAccSelect').selectedOptions[0];
+        const bank_account_id = document.getElementById('cashToAccSelect').value;
+        const to_account = toSelOpt ? toSelOpt.dataset.gl : '';
         if (!desc || amount <= 0) { showToast('شرح و مبلغ را وارد کنید', true); return; }
-        if (from_account === to_account) { showToast('حساب مبدا و مقصد نباید یکی باشند', true); return; }
+        if (!bank_account_id) { showToast('حساب مقصد را انتخاب کنید', true); return; }
         try {
             const res = await fetch('/cash_transaction', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ description: desc, amount, from_account, to_account })
+                body: JSON.stringify({ description: desc, amount, from_account, to_account, bank_account_id: parseInt(bank_account_id) })
             });
             const data = await res.json();
             showToast(msgOf(data, 'خطا'), !data.success);
@@ -2186,6 +2299,10 @@
             }
         } catch(e) { showToast('خطا در ارتباط با سرور', true); }
     };
+
+    document.getElementById('cashVoiceBtn').addEventListener('click', () => {
+        showToast('دکمه فرمان صوتی را در صفحه اصلی بزنید و شرح تراکنش را بگویید', false);
+    });
     document.getElementById('closeSupportBtn').onclick = closeSupportSheet;
 
     /* ===================== راهنمای خوش‌آمدگویی برای کاربر جدید ===================== */
@@ -2651,5 +2768,9 @@
 
     checkAuthAndInit();
 </script>
+
+<footer style="text-align:center; padding:18px 16px; font-size:11px; color:rgba(255,255,255,0.55); direction:rtl;">
+    طراحی و توسعه توسط <a href="mailto:iranian.asc@gmail.com" style="color:rgba(255,255,255,0.75); text-decoration:none; font-weight:600;">گروه البرز فلز</a>
+</footer>
 </body>
 </html>
