@@ -300,9 +300,12 @@ async def sub_details(request: Request, code: str) -> dict:
                     balances[name] = balances.get(name, 0) - float(qty or 0)
                     if name not in units:
                         units[name] = unit or "عدد"
+            def _fmt_qty(q):
+                r = round(q, 3)
+                return f"{int(r):,}" if r == int(r) else f"{r:,.3f}".rstrip('0').rstrip('.')
             items = [
                 {"name": name, "qty": round(qty, 3), "unit": units.get(name, "عدد"),
-                 "value": f"{qty:,.3f} {units.get(name, 'عدد')}"}
+                 "value": f"{_fmt_qty(qty)} {units.get(name, 'عدد')}"}
                 for name, qty in sorted(balances.items(), key=lambda x: x[0])
             ]
             return {"is_product_list": True, "items": items}
