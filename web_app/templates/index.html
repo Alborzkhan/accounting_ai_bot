@@ -757,19 +757,21 @@
     </div>
 </div>
 
-<div id="partyStatementSheet" class="sheet" style="max-width:520px;">
+<div id="partyStatementSheet" class="sheet" style="max-width:520px; z-index:1400;">
     <div class="modal-title" id="partyStatementTitle">صورت‌حساب</div>
     <div id="partyStatementInfo" class="hint-text" style="margin-bottom:10px;"></div>
     <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
-        <table id="partyStatementTable" style="width:100%; border-collapse:collapse; font-size:12.5px; direction:rtl;">
+        <table id="partyStatementTable" style="width:100%; border-collapse:collapse; font-size:11.5px; direction:rtl;">
             <thead>
-                <tr style="background:rgba(0,0,0,0.06);">
-                    <th style="padding:6px 4px; text-align:center;">ردیف</th>
-                    <th style="padding:6px 4px; text-align:center;">تاریخ</th>
-                    <th style="padding:6px 4px; text-align:right;">شرح</th>
-                    <th style="padding:6px 4px; text-align:center;">بدهکار</th>
-                    <th style="padding:6px 4px; text-align:center;">بستانکار</th>
-                    <th style="padding:6px 4px; text-align:center;">مانده</th>
+                <tr style="background:rgba(0,0,0,0.08);">
+                    <th style="padding:5px 3px; text-align:center;">ردیف</th>
+                    <th style="padding:5px 3px; text-align:center;">تاریخ</th>
+                    <th style="padding:5px 3px; text-align:right;">شرح</th>
+                    <th style="padding:5px 3px; text-align:center;">بدهکار</th>
+                    <th style="padding:5px 3px; text-align:center;">بستانکار</th>
+                    <th style="padding:5px 3px; text-align:center;">گردش بد.</th>
+                    <th style="padding:5px 3px; text-align:center;">گردش بس.</th>
+                    <th style="padding:5px 3px; text-align:center;">مانده</th>
                 </tr>
             </thead>
             <tbody id="partyStatementBody"></tbody>
@@ -781,20 +783,21 @@
     </div>
 </div>
 
-<div id="productStatementSheet" class="sheet" style="max-width:520px;">
+<div id="productStatementSheet" class="sheet" style="max-width:520px; z-index:1400;">
     <div class="modal-title" id="productStatementTitle">گردش کالا</div>
     <div id="productStatementInfo" class="hint-text" style="margin-bottom:10px;"></div>
     <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
-        <table id="productStatementTable" style="width:100%; border-collapse:collapse; font-size:12px; direction:rtl;">
+        <table id="productStatementTable" style="width:100%; border-collapse:collapse; font-size:11.5px; direction:rtl;">
             <thead>
-                <tr style="background:rgba(0,0,0,0.06);">
-                    <th style="padding:5px 4px; text-align:center;">ردیف</th>
-                    <th style="padding:5px 4px; text-align:center;">تاریخ</th>
-                    <th style="padding:5px 4px; text-align:center;">نوع</th>
-                    <th style="padding:5px 4px; text-align:center;">ورودی</th>
-                    <th style="padding:5px 4px; text-align:center;">خروجی</th>
-                    <th style="padding:5px 4px; text-align:center;">مانده</th>
-                    <th style="padding:5px 4px; text-align:center;">قیمت واحد</th>
+                <tr style="background:rgba(0,0,0,0.08);">
+                    <th style="padding:5px 3px; text-align:center;">ردیف</th>
+                    <th style="padding:5px 3px; text-align:center;">تاریخ</th>
+                    <th style="padding:5px 3px; text-align:right;">شرح</th>
+                    <th style="padding:5px 3px; text-align:center;">بدهکار</th>
+                    <th style="padding:5px 3px; text-align:center;">بستانکار</th>
+                    <th style="padding:5px 3px; text-align:center;">گردش بد.</th>
+                    <th style="padding:5px 3px; text-align:center;">گردش بس.</th>
+                    <th style="padding:5px 3px; text-align:center;">مانده</th>
                 </tr>
             </thead>
             <tbody id="productStatementBody"></tbody>
@@ -1250,7 +1253,7 @@
                 container.innerHTML = data.items.map(item => `
                     <div class="sub-detail-item party-row" data-product="${esc(item.name)}" style="cursor:pointer;">
                         <span>📦 ${esc(item.name)}</span>
-                        <span style="color:${item.qty < 0 ? '#c00' : '#157a54'}; font-weight:600;">${item.value} ›</span>
+                        <span style="color:${item.qty < 0 ? '#c00' : '#157a54'}; font-weight:600;">${fmtNum(item.qty)} ${esc(item.unit)} ›</span>
                     </div>`).join('');
                 container.querySelectorAll('.party-row').forEach(row => {
                     row.addEventListener('click', () => openProductStatement(row.dataset.product));
@@ -1272,9 +1275,20 @@
         } catch (e) { container.innerHTML = '<div class="empty-sub">خطا در دریافت</div>'; }
     }
 
+    function fmtNum(n) {
+        if (!n && n !== 0) return '—';
+        const rounded = Math.round(Number(n) * 1000) / 1000;
+        if (rounded === Math.floor(rounded)) return Math.floor(rounded).toLocaleString();
+        return rounded.toLocaleString(undefined, {maximumFractionDigits: 3});
+    }
+    const TD = 'style="padding:5px 3px;text-align:center;"';
+    const TDR = 'style="padding:5px 3px;text-align:right;"';
+
     async function openPartyStatement(partyId, partyType) {
+        const el = document.getElementById('partyStatementSheet');
+        el.style.zIndex = 1400;
         document.getElementById('overlay').classList.add('active');
-        document.getElementById('partyStatementSheet').classList.add('active');
+        el.classList.add('active');
         document.getElementById('partyStatementTitle').textContent = 'صورت‌حساب';
         document.getElementById('partyStatementInfo').textContent = 'در حال بارگذاری...';
         document.getElementById('partyStatementBody').innerHTML = '';
@@ -1282,36 +1296,38 @@
         try {
             const res = await fetch(`/party_statement?party_id=${partyId}&party_type=${partyType}`);
             const data = await res.json();
-            if (!data.success) {
-                document.getElementById('partyStatementInfo').textContent = msgOf(data, 'خطا در دریافت صورت‌حساب');
-                return;
-            }
+            if (!data.success) { document.getElementById('partyStatementInfo').textContent = msgOf(data, 'خطا'); return; }
             document.getElementById('partyStatementTitle').textContent = `صورت‌حساب ${data.party_name}`;
             document.getElementById('partyStatementInfo').textContent = data.party_mobile ? `تلفن: ${data.party_mobile}` : '';
             const body = document.getElementById('partyStatementBody');
             if (!data.rows.length) {
-                body.innerHTML = '<tr><td colspan="6" style="padding:12px; text-align:center;">هیچ تراکنشی ثبت نشده</td></tr>';
+                body.innerHTML = `<tr><td colspan="8" style="padding:12px;text-align:center;">هیچ تراکنشی ثبت نشده</td></tr>`;
             } else {
-                body.innerHTML = data.rows.map((r, i) => `
-                    <tr style="border-bottom:1px solid rgba(0,0,0,0.08);">
-                        <td style="padding:6px 4px; text-align:center;">${i + 1}</td>
-                        <td style="padding:6px 4px; text-align:center; white-space:nowrap;">${r.date}</td>
-                        <td style="padding:6px 4px; text-align:right;">${esc(r.description)}</td>
-                        <td style="padding:6px 4px; text-align:center;">${r.debit ? r.debit.toLocaleString() : '—'}</td>
-                        <td style="padding:6px 4px; text-align:center;">${r.credit ? r.credit.toLocaleString() : '—'}</td>
-                        <td style="padding:6px 4px; text-align:center; font-weight:600;">${r.balance.toLocaleString()}</td>
-                    </tr>`).join('');
+                let runD = 0, runC = 0;
+                body.innerHTML = data.rows.map((r, i) => {
+                    runD += r.debit || 0; runC += r.credit || 0;
+                    return `<tr style="border-bottom:1px solid rgba(0,0,0,0.07);">
+                        <td ${TD}>${i+1}</td>
+                        <td ${TD} style="white-space:nowrap;">${r.date}</td>
+                        <td ${TDR}>${esc(r.description)}</td>
+                        <td ${TD} style="color:#157a54;">${r.debit ? r.debit.toLocaleString() : '—'}</td>
+                        <td ${TD} style="color:#c55;">${r.credit ? r.credit.toLocaleString() : '—'}</td>
+                        <td ${TD}>${runD.toLocaleString()}</td>
+                        <td ${TD}>${runC.toLocaleString()}</td>
+                        <td ${TD} style="font-weight:700;">${r.balance.toLocaleString()}</td>
+                    </tr>`;
+                }).join('');
             }
             document.getElementById('partyStatementFoot').innerHTML = `
-                <tr style="background:rgba(0,0,0,0.06); font-weight:700;">
-                    <td colspan="3" style="padding:8px 4px; text-align:right;">جمع کل</td>
-                    <td style="padding:8px 4px; text-align:center;">${data.total_debit.toLocaleString()}</td>
-                    <td style="padding:8px 4px; text-align:center;">${data.total_credit.toLocaleString()}</td>
-                    <td style="padding:8px 4px; text-align:center;">${data.closing_balance.toLocaleString()}</td>
+                <tr style="background:rgba(0,0,0,0.07);font-weight:700;">
+                    <td colspan="3" ${TDR}>جمع کل</td>
+                    <td ${TD} style="color:#157a54;">${data.total_debit.toLocaleString()}</td>
+                    <td ${TD} style="color:#c55;">${data.total_credit.toLocaleString()}</td>
+                    <td ${TD}>${data.total_debit.toLocaleString()}</td>
+                    <td ${TD}>${data.total_credit.toLocaleString()}</td>
+                    <td ${TD}>${data.closing_balance.toLocaleString()}</td>
                 </tr>`;
-        } catch (e) {
-            document.getElementById('partyStatementInfo').textContent = 'خطا در ارتباط با سرور';
-        }
+        } catch (e) { document.getElementById('partyStatementInfo').textContent = 'خطا در ارتباط با سرور'; }
     }
     function closePartyStatementSheet() {
         document.getElementById('overlay').classList.remove('active');
@@ -1320,8 +1336,10 @@
     document.getElementById('closePartyStatementBtn').onclick = closePartyStatementSheet;
 
     async function openProductStatement(productName) {
+        const el = document.getElementById('productStatementSheet');
+        el.style.zIndex = 1400;
         document.getElementById('overlay').classList.add('active');
-        document.getElementById('productStatementSheet').classList.add('active');
+        el.classList.add('active');
         document.getElementById('productStatementTitle').textContent = `گردش کالا: ${productName}`;
         document.getElementById('productStatementInfo').textContent = 'در حال بارگذاری...';
         document.getElementById('productStatementBody').innerHTML = '';
@@ -1332,29 +1350,34 @@
             if (!data.success) { document.getElementById('productStatementInfo').textContent = msgOf(data, 'خطا'); return; }
             const unit = data.unit || 'عدد';
             document.getElementById('productStatementInfo').textContent =
-                `مانده کنونی: ${data.closing_balance.toLocaleString()} ${unit}  |  جمع ورودی: ${data.total_in.toLocaleString()}  |  جمع خروجی: ${data.total_out.toLocaleString()}`;
+                `مانده: ${fmtNum(data.closing_balance)} ${unit}  |  جمع ورود: ${fmtNum(data.total_in)}  |  جمع خروج: ${fmtNum(data.total_out)}`;
             const body = document.getElementById('productStatementBody');
             if (!data.rows.length) {
-                body.innerHTML = '<tr><td colspan="7" style="padding:12px;text-align:center;">هیچ تراکنشی ثبت نشده</td></tr>';
+                body.innerHTML = `<tr><td colspan="8" style="padding:12px;text-align:center;">هیچ تراکنشی ثبت نشده</td></tr>`;
             } else {
-                body.innerHTML = data.rows.map((r, i) => `
-                    <tr style="border-bottom:1px solid rgba(0,0,0,0.08); color:${r.type==='خرید'?'#157a54':'#c55'}">
-                        <td style="padding:5px 4px;text-align:center;">${i+1}</td>
-                        <td style="padding:5px 4px;text-align:center;white-space:nowrap;">${r.date}</td>
-                        <td style="padding:5px 4px;text-align:center;font-weight:600;">${r.type}</td>
-                        <td style="padding:5px 4px;text-align:center;">${r.qty_in||'—'}</td>
-                        <td style="padding:5px 4px;text-align:center;">${r.qty_out||'—'}</td>
-                        <td style="padding:5px 4px;text-align:center;font-weight:700;">${r.balance}</td>
-                        <td style="padding:5px 4px;text-align:center;">${r.unit_price?r.unit_price.toLocaleString():'—'}</td>
-                    </tr>`).join('');
+                let runD = 0, runC = 0;
+                body.innerHTML = data.rows.map((r, i) => {
+                    runD += r.qty_in || 0; runC += r.qty_out || 0;
+                    return `<tr style="border-bottom:1px solid rgba(0,0,0,0.07);">
+                        <td ${TD}>${i+1}</td>
+                        <td ${TD} style="white-space:nowrap;">${r.date}</td>
+                        <td ${TDR}>${esc(r.invoice_no)}</td>
+                        <td ${TD} style="color:#157a54;">${r.qty_in ? fmtNum(r.qty_in) : '—'}</td>
+                        <td ${TD} style="color:#c55;">${r.qty_out ? fmtNum(r.qty_out) : '—'}</td>
+                        <td ${TD}>${fmtNum(runD)}</td>
+                        <td ${TD}>${fmtNum(runC)}</td>
+                        <td ${TD} style="font-weight:700;">${fmtNum(r.balance)}</td>
+                    </tr>`;
+                }).join('');
             }
             document.getElementById('productStatementFoot').innerHTML = `
-                <tr style="background:rgba(0,0,0,0.06);font-weight:700;">
-                    <td colspan="3" style="padding:6px 4px;text-align:right;">جمع کل</td>
-                    <td style="padding:6px 4px;text-align:center;color:#157a54;">${data.total_in}</td>
-                    <td style="padding:6px 4px;text-align:center;color:#c55;">${data.total_out}</td>
-                    <td style="padding:6px 4px;text-align:center;">${data.closing_balance}</td>
-                    <td></td>
+                <tr style="background:rgba(0,0,0,0.07);font-weight:700;">
+                    <td colspan="3" ${TDR}>جمع کل (${unit})</td>
+                    <td ${TD} style="color:#157a54;">${fmtNum(data.total_in)}</td>
+                    <td ${TD} style="color:#c55;">${fmtNum(data.total_out)}</td>
+                    <td ${TD}>${fmtNum(data.total_in)}</td>
+                    <td ${TD}>${fmtNum(data.total_out)}</td>
+                    <td ${TD}>${fmtNum(data.closing_balance)}</td>
                 </tr>`;
         } catch (e) { document.getElementById('productStatementInfo').textContent = 'خطا در ارتباط با سرور'; }
     }
