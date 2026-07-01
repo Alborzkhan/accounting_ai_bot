@@ -378,6 +378,7 @@ async def get_trial_balance(request: Request, date_from: str = "", date_to: str 
             data.append({
                 "code": row.code,
                 "name": row.name,
+                "type": getattr(row, 'type', '') or '',
                 "debit": row.total_debit,
                 "credit": row.total_credit
             })

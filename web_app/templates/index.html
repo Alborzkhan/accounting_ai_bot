@@ -1473,16 +1473,22 @@
     document.getElementById('closeProductStatementBtn').onclick = closeProductStatementSheet;
 
     async function updateGross() {
-        const res = await fetch('/trial_balance');
-        const data = await res.json();
-        let income = 0, expense = 0;
-        data.data.forEach(i => {
-            if (i.code === "6001" || i.code === "6002") income += i.credit;
-            if (i.code.startsWith("70") || i.code.startsWith("50")) expense += i.debit;
-        });
-        document.getElementById('grossProfit').innerHTML = (income - expense).toLocaleString() + ' تومان';
-        document.getElementById('totalIncome').innerHTML = income.toLocaleString();
-        document.getElementById('totalExpense').innerHTML = expense.toLocaleString();
+        try {
+            const res = await fetch('/trial_balance');
+            const data = await res.json();
+            let income = 0, expense = 0;
+            data.data.forEach(i => {
+                if (i.type === 'income' || i.code.startsWith('4')) {
+                    income += Math.max(0, (i.credit || 0) - (i.debit || 0));
+                } else if (i.type === 'expense' || i.code.startsWith('5') || i.code.startsWith('7')) {
+                    expense += Math.max(0, (i.debit || 0) - (i.credit || 0));
+                }
+            });
+            const gross = income - expense;
+            document.getElementById('grossProfit').innerHTML = gross.toLocaleString() + ' تومان';
+            document.getElementById('totalIncome').innerHTML = income.toLocaleString();
+            document.getElementById('totalExpense').innerHTML = expense.toLocaleString();
+        } catch(e) { /* بی‌صدا */ }
     }
 
     /* ===================== ثبت سند ===================== */
@@ -2770,7 +2776,7 @@
 </script>
 
 <footer style="text-align:center; padding:18px 16px; font-size:11px; color:rgba(255,255,255,0.55); direction:rtl;">
-    طراحی و توسعه توسط <a href="mailto:iranian.asc@gmail.com" style="color:rgba(255,255,255,0.75); text-decoration:none; font-weight:600;">گروه البرز فلز</a>
+    طراحی و توسعه توسط <a href="mailto:iranian.asc@gmail.com" style="color:rgba(255,255,255,0.75); text-decoration:none; font-weight:600;">گروه صنعتی البرز</a>
 </footer>
 </body>
 </html>
