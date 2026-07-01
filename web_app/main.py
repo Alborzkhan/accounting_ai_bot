@@ -232,6 +232,62 @@ async def notifications_check(request: Request) -> dict:
     return {"messages": messages}
 
 
+CASH_ACCOUNTS = {
+    "1001": "صندوق",
+    "1002": "بانک",
+    "1003": "تنخواه‌گردان",
+}
+
+
+@app.get("/cash_balances")
+async def cash_balances(request: Request) -> dict:
+    """مانده‌ی فعلی صندوق، بانک و تنخواه برای کاربر جاری."""
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "data": []}
+    balances = engine.get_trial_balance(user_id=user_id)
+    data = []
+    for acc in balances:
+        if acc.code in CASH_ACCOUNTS:
+            bal = round(acc.total_debit - acc.total_credit, 0)
+            data.append({"code": acc.code, "name": CASH_ACCOUNTS[acc.code], "balance": bal})
+    missing = [code for code in CASH_ACCOUNTS if not any(d["code"] == code for d in data)]
+    for code in missing:
+        data.append({"code": code, "name": CASH_ACCOUNTS[code], "balance": 0})
+    data.sort(key=lambda x: x["code"])
+    return {"success": True, "data": data}
+
+
+@app.post("/cash_transaction")
+async def cash_transaction(request: Request) -> dict:
+    """ثبت سند ساده برای صندوق/بانک/تنخواه."""
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    payload = await request.json()
+    tx_type = payload.get("type", "")
+    amount = float(payload.get("amount") or 0)
+    description = (payload.get("description") or "").strip()
+    from_acc = payload.get("from_account", "")
+    to_acc = payload.get("to_account", "")
+    if amount <= 0:
+        return {"success": False, "message": "مبلغ باید بیشتر از صفر باشد."}
+    if not description:
+        return {"success": False, "message": "شرح را وارد کنید."}
+    if not from_acc or not to_acc:
+        return {"success": False, "message": "حساب مبدا و مقصد را انتخاب کنید."}
+    try:
+        entry_id = engine.create_voucher(
+            date=datetime.now(),
+            description=description,
+            lines=[(to_acc, amount, "debit"), (from_acc, amount, "credit")],
+            user_id=user_id,
+        )
+        return {"success": True, "message": f"سند شماره {entry_id} ثبت شد.", "entry_id": entry_id}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
 @app.get("/trial_balance")
 async def get_trial_balance(request: Request, date_from: str = "", date_to: str = "") -> dict:
     user_id = get_user_id(request)
@@ -437,11 +493,13 @@ async def product_statement(request: Request, product_name: str) -> dict:
 
         events = []
         for item, inv in purchases:
-            events.append({"date": inv.date, "type": "خرید", "invoice_no": inv.invoice_number,
+            events.append({"date": inv.date, "type": "خرید",
+                           "description": inv.description or "",
                            "qty_in": float(item.quantity or 0), "qty_out": 0,
                            "unit": item.unit or "عدد", "unit_price": item.unit_price or 0})
         for item, inv in sales:
-            events.append({"date": inv.date, "type": "فروش", "invoice_no": inv.invoice_number,
+            events.append({"date": inv.date, "type": "فروش",
+                           "description": getattr(inv, 'description', '') or "",
                            "qty_in": 0, "qty_out": float(item.quantity or 0),
                            "unit": item.unit or "عدد", "unit_price": item.unit_price or 0})
 
@@ -457,7 +515,7 @@ async def product_statement(request: Request, product_name: str) -> dict:
             rows_out.append({
                 "date": to_shamsi(e["date"]),
                 "type": e["type"],
-                "invoice_no": e["invoice_no"] or "",
+                "description": e["description"] or "",
                 "qty_in": e["qty_in"],
                 "qty_out": e["qty_out"],
                 "unit": e["unit"],

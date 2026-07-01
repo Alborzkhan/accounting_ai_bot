@@ -506,6 +506,12 @@
                 </div>
                 <span>پروفایل</span>
             </div>
+            <div class="app-tile" id="cashTile">
+                <div class="app-icon icon-teal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><path d="M6 15h.01M10 15h4"/></svg>
+                </div>
+                <span>صندوق/بانک</span>
+            </div>
             <div class="app-tile" id="supportTile">
                 <div class="app-icon icon-indigo">
                     <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7v3a3 3 0 0 0 3 3h1v-7H6v-1a6 6 0 0 1 12 0v1h-3v7h1a3 3 0 0 0 3-3v-3a7 7 0 0 0-7-7z"/><path d="M9 19a3 3 0 0 0 6 0"/></svg>
@@ -595,6 +601,43 @@
     <div class="modal-buttons">
         <button class="modal-btn" id="closeSettingsBtn">بستن</button>
         <button class="modal-btn modal-btn-primary" id="saveSettingsBtn">ذخیره</button>
+    </div>
+</div>
+
+<div id="cashSheet" class="sheet">
+    <div class="modal-title">💰 نقدینگی — صندوق / بانک / تنخواه</div>
+
+    <div id="cashBalancesDisplay" class="hint-text" style="margin-bottom:12px;">در حال بارگذاری...</div>
+
+    <div class="section-header" style="margin:10px 0 6px;"><h3 style="font-size:13px;">ثبت تراکنش</h3></div>
+    <div class="form-row"><label>شرح</label><input id="cashDesc" type="text" placeholder="مثلاً: واریز دریافتی مشتری به بانک"></div>
+    <div class="form-row"><label>مبلغ (تومان)</label><input id="cashAmount" type="number" placeholder="0"></div>
+    <div class="form-grid-2">
+        <div class="form-row">
+            <label>از حساب (مبدا)</label>
+            <select id="cashFromAcc">
+                <option value="1001">صندوق</option>
+                <option value="1002">بانک</option>
+                <option value="1003">تنخواه‌گردان</option>
+                <option value="1101">بدهکاران (دریافتی)</option>
+                <option value="4001">فروش</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <label>به حساب (مقصد)</label>
+            <select id="cashToAcc">
+                <option value="1002">بانک</option>
+                <option value="1001">صندوق</option>
+                <option value="1003">تنخواه‌گردان</option>
+                <option value="2001">بستانکاران (پرداخت)</option>
+                <option value="5101">هزینه</option>
+            </select>
+        </div>
+    </div>
+    <button class="modal-btn modal-btn-primary" type="button" id="saveCashTransactionBtn" style="margin-bottom:14px;">ثبت سند</button>
+
+    <div class="modal-buttons">
+        <button class="modal-btn" id="closeCashSheetBtn">بستن</button>
     </div>
 </div>
 
@@ -792,11 +835,10 @@
                 <tr style="background:rgba(0,0,0,0.08);">
                     <th style="padding:5px 3px; text-align:center;">ردیف</th>
                     <th style="padding:5px 3px; text-align:center;">تاریخ</th>
-                    <th style="padding:5px 3px; text-align:right;">شرح</th>
-                    <th style="padding:5px 3px; text-align:center;">بدهکار</th>
-                    <th style="padding:5px 3px; text-align:center;">بستانکار</th>
-                    <th style="padding:5px 3px; text-align:center;">گردش بد.</th>
-                    <th style="padding:5px 3px; text-align:center;">گردش بس.</th>
+                    <th style="padding:5px 3px; text-align:center;">نوع</th>
+                    <th style="padding:5px 3px; text-align:right;">توضیحات</th>
+                    <th style="padding:5px 3px; text-align:center;">ورودی</th>
+                    <th style="padding:5px 3px; text-align:center;">خروجی</th>
                     <th style="padding:5px 3px; text-align:center;">مانده</th>
                 </tr>
             </thead>
@@ -1353,30 +1395,24 @@
                 `مانده: ${fmtNum(data.closing_balance)} ${unit}  |  جمع ورود: ${fmtNum(data.total_in)}  |  جمع خروج: ${fmtNum(data.total_out)}`;
             const body = document.getElementById('productStatementBody');
             if (!data.rows.length) {
-                body.innerHTML = `<tr><td colspan="8" style="padding:12px;text-align:center;">هیچ تراکنشی ثبت نشده</td></tr>`;
+                body.innerHTML = `<tr><td colspan="7" style="padding:12px;text-align:center;">هیچ تراکنشی ثبت نشده</td></tr>`;
             } else {
-                let runD = 0, runC = 0;
-                body.innerHTML = data.rows.map((r, i) => {
-                    runD += r.qty_in || 0; runC += r.qty_out || 0;
-                    return `<tr style="border-bottom:1px solid rgba(0,0,0,0.07);">
+                body.innerHTML = data.rows.map((r, i) => `
+                    <tr style="border-bottom:1px solid rgba(0,0,0,0.07); color:${r.type==='خرید'?'#157a54':'#c44'}">
                         <td ${TD}>${i+1}</td>
                         <td ${TD} style="white-space:nowrap;">${r.date}</td>
-                        <td ${TDR}>${esc(r.invoice_no)}</td>
-                        <td ${TD} style="color:#157a54;">${r.qty_in ? fmtNum(r.qty_in) : '—'}</td>
-                        <td ${TD} style="color:#c55;">${r.qty_out ? fmtNum(r.qty_out) : '—'}</td>
-                        <td ${TD}>${fmtNum(runD)}</td>
-                        <td ${TD}>${fmtNum(runC)}</td>
+                        <td ${TD} style="font-weight:600;">${r.type}</td>
+                        <td ${TDR} style="color:#333; font-size:10.5px;">${esc(r.description || '')}</td>
+                        <td ${TD}>${r.qty_in ? fmtNum(r.qty_in) : '—'}</td>
+                        <td ${TD}>${r.qty_out ? fmtNum(r.qty_out) : '—'}</td>
                         <td ${TD} style="font-weight:700;">${fmtNum(r.balance)}</td>
-                    </tr>`;
-                }).join('');
+                    </tr>`).join('');
             }
             document.getElementById('productStatementFoot').innerHTML = `
                 <tr style="background:rgba(0,0,0,0.07);font-weight:700;">
-                    <td colspan="3" ${TDR}>جمع کل (${unit})</td>
+                    <td colspan="4" ${TDR}>جمع کل (${unit})</td>
                     <td ${TD} style="color:#157a54;">${fmtNum(data.total_in)}</td>
-                    <td ${TD} style="color:#c55;">${fmtNum(data.total_out)}</td>
-                    <td ${TD}>${fmtNum(data.total_in)}</td>
-                    <td ${TD}>${fmtNum(data.total_out)}</td>
+                    <td ${TD} style="color:#c44;">${fmtNum(data.total_out)}</td>
                     <td ${TD}>${fmtNum(data.closing_balance)}</td>
                 </tr>`;
         } catch (e) { document.getElementById('productStatementInfo').textContent = 'خطا در ارتباط با سرور'; }
@@ -2102,6 +2138,54 @@
         document.getElementById('supportSheet').classList.remove('active');
     }
     document.getElementById('supportTile').onclick = openSupportSheet;
+
+    async function openCashSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('cashSheet').classList.add('active');
+        const display = document.getElementById('cashBalancesDisplay');
+        display.textContent = 'در حال بارگذاری...';
+        try {
+            const res = await fetch('/cash_balances');
+            const data = await res.json();
+            if (data.success) {
+                display.innerHTML = data.data.map(acc => `
+                    <span style="display:inline-block; background:rgba(255,255,255,0.5); border-radius:10px; padding:6px 12px; margin:3px; font-size:13px;">
+                        <b>${esc(acc.name)}</b>: ${acc.balance.toLocaleString()} تومان
+                    </span>`).join('');
+            } else {
+                display.textContent = 'خطا در دریافت موجودی';
+            }
+        } catch(e) { display.textContent = 'خطا در ارتباط با سرور'; }
+    }
+    function closeCashSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('cashSheet').classList.remove('active');
+    }
+    document.getElementById('cashTile').onclick = openCashSheet;
+    document.getElementById('closeCashSheetBtn').onclick = closeCashSheet;
+    document.getElementById('saveCashTransactionBtn').onclick = async () => {
+        const desc = document.getElementById('cashDesc').value.trim();
+        const amount = parseFloat(document.getElementById('cashAmount').value) || 0;
+        const from_account = document.getElementById('cashFromAcc').value;
+        const to_account = document.getElementById('cashToAcc').value;
+        if (!desc || amount <= 0) { showToast('شرح و مبلغ را وارد کنید', true); return; }
+        if (from_account === to_account) { showToast('حساب مبدا و مقصد نباید یکی باشند', true); return; }
+        try {
+            const res = await fetch('/cash_transaction', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ description: desc, amount, from_account, to_account })
+            });
+            const data = await res.json();
+            showToast(msgOf(data, 'خطا'), !data.success);
+            if (data.success) {
+                document.getElementById('cashDesc').value = '';
+                document.getElementById('cashAmount').value = '';
+                openCashSheet();
+                updateGross();
+                fetchAccounts();
+            }
+        } catch(e) { showToast('خطا در ارتباط با سرور', true); }
+    };
     document.getElementById('closeSupportBtn').onclick = closeSupportSheet;
 
     /* ===================== راهنمای خوش‌آمدگویی برای کاربر جدید ===================== */
@@ -2550,7 +2634,7 @@
     function closeAllSheets() {
         closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet();
         closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet();
-        closeWelcomeGuideSheet(); closePricingSheet(); closePartyStatementSheet(); closeOpeningBalanceSheet(); closeProductStatementSheet();
+        closeWelcomeGuideSheet(); closePricingSheet(); closePartyStatementSheet(); closeOpeningBalanceSheet(); closeProductStatementSheet(); closeCashSheet();
         if (document.getElementById('detailPage').classList.contains('active')) {
             document.getElementById('closeDetailBtn').click();
         }

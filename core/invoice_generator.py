@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import re
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple, Any
 from sqlalchemy.orm import sessionmaker
@@ -31,12 +32,12 @@ class InvoiceGenerator:
 
             base_num = 1000 if is_official else 1
             if last_invoice and last_invoice.invoice_number:
-                last_num = int(last_invoice.invoice_number.split('-')[-1])
+                m = re.search(r'\d+$', last_invoice.invoice_number); last_num = int(m.group()) if m else 0
                 new_num = last_num + 1
             else:
                 new_num = base_num
 
-            return f"INV-{datetime.now().strftime('%Y%m')}-{new_num:04d}"
+            return f"{new_num:04d}"
         finally:
             session.close()
 
@@ -109,8 +110,11 @@ class InvoiceGenerator:
                 query = query.filter(PurchaseInvoice.user_id == user_id)
             last = query.order_by(PurchaseInvoice.id.desc()).first()
             base_num = 1000 if is_official else 1
-            new_num = int(last.invoice_number.split('-')[-1]) + 1 if last and last.invoice_number else base_num
-            return f"PUR-{datetime.now().strftime('%Y%m')}-{new_num:04d}"
+            if last and last.invoice_number:
+                m = re.search(r'\d+$', last.invoice_number); new_num = (int(m.group()) if m else 0) + 1
+            else:
+                new_num = base_num
+            return f"{new_num:04d}"
         finally:
             session.close()
 
