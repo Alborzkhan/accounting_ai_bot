@@ -256,6 +256,17 @@ PARTY_ACCOUNT_CODES = {
     "1101": "customer", "1102": "customer", "1103": "customer", "1601": "customer",
     "2001": "vendor", "2002": "vendor",
 }
+INVENTORY_ACCOUNT_CODES = {"1201", "1202", "1203", "1204", "1301"}
+
+
+def to_shamsi(dt) -> str:
+    if not dt:
+        return ""
+    try:
+        jd = jdatetime.datetime.fromgregorian(datetime=dt)
+        return f"{jd.year}/{jd.month:02d}/{jd.day:02d}"
+    except Exception:
+        return dt.strftime("%Y/%m/%d")
 
 
 @app.get("/sub_details")
@@ -269,6 +280,32 @@ async def sub_details(request: Request, code: str) -> dict:
         account = session.query(Account).filter_by(code=code).first()
         if not account:
             return {"items": []}
+
+        if code in INVENTORY_ACCOUNT_CODES:
+            from database.models import InvoiceItem, ProformaInvoice, PurchaseItem, PurchaseInvoice
+            purchase_rows = session.query(PurchaseItem.description, PurchaseItem.quantity, PurchaseItem.unit).join(
+                PurchaseInvoice, PurchaseItem.purchase_invoice_id == PurchaseInvoice.id
+            ).filter(PurchaseInvoice.user_id == user_id).all()
+            sale_rows = session.query(InvoiceItem.description, InvoiceItem.quantity, InvoiceItem.unit).join(
+                ProformaInvoice, InvoiceItem.invoice_id == ProformaInvoice.id
+            ).filter(ProformaInvoice.user_id == user_id, ProformaInvoice.document_type != "proforma").all()
+            balances: dict = {}
+            units: dict = {}
+            for name, qty, unit in purchase_rows:
+                if name:
+                    balances[name] = balances.get(name, 0) + float(qty or 0)
+                    units[name] = unit or "عدد"
+            for name, qty, unit in sale_rows:
+                if name:
+                    balances[name] = balances.get(name, 0) - float(qty or 0)
+                    if name not in units:
+                        units[name] = unit or "عدد"
+            items = [
+                {"name": name, "qty": round(qty, 3), "unit": units.get(name, "عدد"),
+                 "value": f"{qty:,.3f} {units.get(name, 'عدد')}"}
+                for name, qty in sorted(balances.items(), key=lambda x: x[0])
+            ]
+            return {"is_product_list": True, "items": items}
 
         party_type = PARTY_ACCOUNT_CODES.get(code)
         if party_type:
@@ -304,8 +341,7 @@ async def sub_details(request: Request, code: str) -> dict:
         items = []
         for line, entry in rows:
             sign = "+" if line.side == "debit" else "-"
-            date_str = entry.date.strftime("%Y/%m/%d") if entry.date else ""
-            name = f"{date_str} — {line.description or entry.description or ''}"
+            name = f"{to_shamsi(entry.date)} — {line.description or entry.description or ''}"
             items.append({"name": name, "value": f"{sign}{line.amount:,.0f}"})
         return {"items": items}
     finally:
@@ -352,7 +388,7 @@ async def party_statement(request: Request, party_id: int, party_type: str) -> d
             total_debit += debit
             total_credit += credit
             rows_out.append({
-                "date": entry.date.strftime("%Y/%m/%d") if entry.date else "",
+                "date": to_shamsi(entry.date),
                 "description": line.description or entry.description or "",
                 "debit": debit,
                 "credit": credit,
@@ -367,6 +403,70 @@ async def party_statement(request: Request, party_id: int, party_type: str) -> d
             "total_debit": total_debit,
             "total_credit": total_credit,
             "closing_balance": balance,
+        }
+    finally:
+        session.close()
+
+
+@app.get("/product_statement")
+async def product_statement(request: Request, product_name: str) -> dict:
+    """گردش کالا: تمام خریدها و فروش‌های یک محصول خاص برای این کاربر، با مانده‌ی کمّی در گردش."""
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    from database.models import InvoiceItem, ProformaInvoice, PurchaseItem, PurchaseInvoice
+    session = engine.Session()
+    try:
+        purchases = session.query(PurchaseItem, PurchaseInvoice).join(
+            PurchaseInvoice, PurchaseItem.purchase_invoice_id == PurchaseInvoice.id
+        ).filter(
+            PurchaseInvoice.user_id == user_id,
+            PurchaseItem.description == product_name,
+        ).order_by(PurchaseInvoice.date.asc()).all()
+
+        sales = session.query(InvoiceItem, ProformaInvoice).join(
+            ProformaInvoice, InvoiceItem.invoice_id == ProformaInvoice.id
+        ).filter(
+            ProformaInvoice.user_id == user_id,
+            ProformaInvoice.document_type != "proforma",
+            InvoiceItem.description == product_name,
+        ).order_by(ProformaInvoice.date.asc()).all()
+
+        events = []
+        for item, inv in purchases:
+            events.append({"date": inv.date, "type": "خرید", "invoice_no": inv.invoice_number,
+                           "qty_in": float(item.quantity or 0), "qty_out": 0,
+                           "unit": item.unit or "عدد", "unit_price": item.unit_price or 0})
+        for item, inv in sales:
+            events.append({"date": inv.date, "type": "فروش", "invoice_no": inv.invoice_number,
+                           "qty_in": 0, "qty_out": float(item.quantity or 0),
+                           "unit": item.unit or "عدد", "unit_price": item.unit_price or 0})
+
+        events.sort(key=lambda e: (e["date"] or datetime.min))
+
+        rows_out = []
+        balance = 0.0
+        total_in = total_out = 0.0
+        for e in events:
+            balance += e["qty_in"] - e["qty_out"]
+            total_in += e["qty_in"]
+            total_out += e["qty_out"]
+            rows_out.append({
+                "date": to_shamsi(e["date"]),
+                "type": e["type"],
+                "invoice_no": e["invoice_no"] or "",
+                "qty_in": e["qty_in"],
+                "qty_out": e["qty_out"],
+                "unit": e["unit"],
+                "unit_price": e["unit_price"],
+                "balance": round(balance, 3),
+            })
+        unit = events[0]["unit"] if events else "عدد"
+        return {
+            "success": True, "product_name": product_name,
+            "rows": rows_out, "unit": unit,
+            "total_in": round(total_in, 3), "total_out": round(total_out, 3),
+            "closing_balance": round(balance, 3),
         }
     finally:
         session.close()

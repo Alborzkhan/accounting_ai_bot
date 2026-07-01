@@ -781,6 +781,31 @@
     </div>
 </div>
 
+<div id="productStatementSheet" class="sheet" style="max-width:520px;">
+    <div class="modal-title" id="productStatementTitle">گردش کالا</div>
+    <div id="productStatementInfo" class="hint-text" style="margin-bottom:10px;"></div>
+    <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
+        <table id="productStatementTable" style="width:100%; border-collapse:collapse; font-size:12px; direction:rtl;">
+            <thead>
+                <tr style="background:rgba(0,0,0,0.06);">
+                    <th style="padding:5px 4px; text-align:center;">ردیف</th>
+                    <th style="padding:5px 4px; text-align:center;">تاریخ</th>
+                    <th style="padding:5px 4px; text-align:center;">نوع</th>
+                    <th style="padding:5px 4px; text-align:center;">ورودی</th>
+                    <th style="padding:5px 4px; text-align:center;">خروجی</th>
+                    <th style="padding:5px 4px; text-align:center;">مانده</th>
+                    <th style="padding:5px 4px; text-align:center;">قیمت واحد</th>
+                </tr>
+            </thead>
+            <tbody id="productStatementBody"></tbody>
+            <tfoot id="productStatementFoot"></tfoot>
+        </table>
+    </div>
+    <div class="modal-buttons" style="margin-top:14px;">
+        <button class="modal-btn" id="closeProductStatementBtn">بستن</button>
+    </div>
+</div>
+
 <div id="jalaliPickerOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:9000;"></div>
 <div id="jalaliPickerModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:16px; padding:18px; z-index:9001; min-width:260px; box-shadow:0 10px 40px rgba(0,0,0,0.3);">
     <div class="modal-title" style="margin-bottom:12px;">انتخاب تاریخ</div>
@@ -1221,7 +1246,16 @@
         try {
             const res = await fetch(`/sub_details?code=${code}`);
             const data = await res.json();
-            if (data.is_party_list && data.items && data.items.length) {
+            if (data.is_product_list && data.items && data.items.length) {
+                container.innerHTML = data.items.map(item => `
+                    <div class="sub-detail-item party-row" data-product="${esc(item.name)}" style="cursor:pointer;">
+                        <span>📦 ${esc(item.name)}</span>
+                        <span style="color:${item.qty < 0 ? '#c00' : '#157a54'}; font-weight:600;">${item.value} ›</span>
+                    </div>`).join('');
+                container.querySelectorAll('.party-row').forEach(row => {
+                    row.addEventListener('click', () => openProductStatement(row.dataset.product));
+                });
+            } else if (data.is_party_list && data.items && data.items.length) {
                 container.innerHTML = data.items.map(item => `
                     <div class="sub-detail-item party-row" data-party-id="${item.id}" data-party-type="${data.party_type}" style="cursor:pointer;">
                         <span>👤 ${esc(item.name)}</span>
@@ -1284,6 +1318,51 @@
         document.getElementById('partyStatementSheet').classList.remove('active');
     }
     document.getElementById('closePartyStatementBtn').onclick = closePartyStatementSheet;
+
+    async function openProductStatement(productName) {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('productStatementSheet').classList.add('active');
+        document.getElementById('productStatementTitle').textContent = `گردش کالا: ${productName}`;
+        document.getElementById('productStatementInfo').textContent = 'در حال بارگذاری...';
+        document.getElementById('productStatementBody').innerHTML = '';
+        document.getElementById('productStatementFoot').innerHTML = '';
+        try {
+            const res = await fetch(`/product_statement?product_name=${encodeURIComponent(productName)}`);
+            const data = await res.json();
+            if (!data.success) { document.getElementById('productStatementInfo').textContent = msgOf(data, 'خطا'); return; }
+            const unit = data.unit || 'عدد';
+            document.getElementById('productStatementInfo').textContent =
+                `مانده کنونی: ${data.closing_balance.toLocaleString()} ${unit}  |  جمع ورودی: ${data.total_in.toLocaleString()}  |  جمع خروجی: ${data.total_out.toLocaleString()}`;
+            const body = document.getElementById('productStatementBody');
+            if (!data.rows.length) {
+                body.innerHTML = '<tr><td colspan="7" style="padding:12px;text-align:center;">هیچ تراکنشی ثبت نشده</td></tr>';
+            } else {
+                body.innerHTML = data.rows.map((r, i) => `
+                    <tr style="border-bottom:1px solid rgba(0,0,0,0.08); color:${r.type==='خرید'?'#157a54':'#c55'}">
+                        <td style="padding:5px 4px;text-align:center;">${i+1}</td>
+                        <td style="padding:5px 4px;text-align:center;white-space:nowrap;">${r.date}</td>
+                        <td style="padding:5px 4px;text-align:center;font-weight:600;">${r.type}</td>
+                        <td style="padding:5px 4px;text-align:center;">${r.qty_in||'—'}</td>
+                        <td style="padding:5px 4px;text-align:center;">${r.qty_out||'—'}</td>
+                        <td style="padding:5px 4px;text-align:center;font-weight:700;">${r.balance}</td>
+                        <td style="padding:5px 4px;text-align:center;">${r.unit_price?r.unit_price.toLocaleString():'—'}</td>
+                    </tr>`).join('');
+            }
+            document.getElementById('productStatementFoot').innerHTML = `
+                <tr style="background:rgba(0,0,0,0.06);font-weight:700;">
+                    <td colspan="3" style="padding:6px 4px;text-align:right;">جمع کل</td>
+                    <td style="padding:6px 4px;text-align:center;color:#157a54;">${data.total_in}</td>
+                    <td style="padding:6px 4px;text-align:center;color:#c55;">${data.total_out}</td>
+                    <td style="padding:6px 4px;text-align:center;">${data.closing_balance}</td>
+                    <td></td>
+                </tr>`;
+        } catch (e) { document.getElementById('productStatementInfo').textContent = 'خطا در ارتباط با سرور'; }
+    }
+    function closeProductStatementSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('productStatementSheet').classList.remove('active');
+    }
+    document.getElementById('closeProductStatementBtn').onclick = closeProductStatementSheet;
 
     async function updateGross() {
         const res = await fetch('/trial_balance');
@@ -1736,6 +1815,7 @@
 
     /* ===================== جستجوی مشتری/فروشنده با نام مشابه ===================== */
     function fillPartyFields(p) {
+        if (p.name) document.getElementById('reviewPartyName').value = p.name;
         document.getElementById('reviewPartyMobile').value = p.mobile || '';
         document.getElementById('reviewPartyNationalId').value = p.national_id || '';
         document.getElementById('reviewPartyEconomicCode').value = p.economic_code || '';
@@ -2447,7 +2527,7 @@
     function closeAllSheets() {
         closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet();
         closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet();
-        closeWelcomeGuideSheet(); closePricingSheet(); closePartyStatementSheet(); closeOpeningBalanceSheet();
+        closeWelcomeGuideSheet(); closePricingSheet(); closePartyStatementSheet(); closeOpeningBalanceSheet(); closeProductStatementSheet();
         if (document.getElementById('detailPage').classList.contains('active')) {
             document.getElementById('closeDetailBtn').click();
         }
