@@ -67,6 +67,21 @@ async def favicon() -> FileResponse:
     return Response(status_code=204)
 
 
+@app.post("/crash-report")
+async def crash_report(request: Request) -> dict:
+    """دریافت گزارش خطای اپ اندروید برای دیباگ (بدون نیاز به ورود)."""
+    try:
+        body = await request.json()
+        text = body.get("text", "")
+        with open("android_crash.log", "a", encoding="utf-8") as f:
+            f.write("=" * 60 + "\n")
+            f.write(text + "\n")
+        print(f"[ANDROID-CRASH] {text[:500]}")
+        return {"success": True}
+    except Exception:
+        return {"success": False}
+
+
 @app.get("/health")
 async def health_check() -> dict:
     """بررسی سلامت سرویس و اتصال به دیتابیس."""
