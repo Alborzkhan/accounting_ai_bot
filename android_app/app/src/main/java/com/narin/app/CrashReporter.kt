@@ -22,6 +22,7 @@ class CrashReporter : Application() {
                 val sw = StringWriter()
                 throwable.printStackTrace(PrintWriter(sw))
                 val report = buildString {
+                    appendLine("APP: v${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE})")
                     appendLine("DEVICE: ${Build.MANUFACTURER} ${Build.MODEL} (${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT})")
                     appendLine("THREAD: ${thread.name}")
                     appendLine("EXCEPTION: ${throwable.javaClass.name}: ${throwable.message}")
@@ -29,7 +30,8 @@ class CrashReporter : Application() {
                     appendLine(sw.toString())
                 }
                 Log.e("NarinCrash", report)
-                sendCrash(report)
+                // ارسال همزمان (blocking) تا قبل از مرگ پروسه حتماً برسد
+                sendCrashSync(report)
             } catch (e: Exception) {
                 Log.e("NarinCrash", "failed to send crash: ${e.message}")
             } finally {
@@ -38,25 +40,23 @@ class CrashReporter : Application() {
         }
     }
 
-    private fun sendCrash(report: String) {
-        Thread {
-            try {
-                val base = BuildConfig.APP_BASE_URL.substringBeforeLast("/")
-                val url = URL("$base/crash-report")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.connectTimeout = 5000
-                conn.readTimeout = 5000
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.doOutput = true
-                val json = "{\"text\": ${escapeJson(report)}}"
-                conn.outputStream.use { it.write(json.toByteArray()) }
-                conn.responseCode
-                conn.disconnect()
-            } catch (e: Exception) {
-                // سکوت؛ فقط دیباگ
-            }
-        }.start()
+    private fun sendCrashSync(report: String) {
+        try {
+            val base = BuildConfig.APP_BASE_URL.substringBeforeLast("/")
+            val url = URL("$base/crash-report")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            val json = "{\"text\": ${escapeJson(report)}}"
+            conn.outputStream.use { it.write(json.toByteArray()) }
+            conn.responseCode
+            conn.disconnect()
+        } catch (e: Exception) {
+            Log.e("NarinCrash", "sendCrashSync error: ${e.message}")
+        }
     }
 
     private fun escapeJson(s: String): String {
