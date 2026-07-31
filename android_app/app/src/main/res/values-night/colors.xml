@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- پس‌زمینه‌ی اصلی در حالت تاریک (سایه‌روی همان نام روز) -->
+    <color name="narin_background">#121212</color>
+    <color name="narin_background_dark">#121212</color>
+</resources>

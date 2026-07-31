@@ -13,6 +13,18 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
+        <ProgressBar
+            android:id="@+id/progressBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_gravity="top"
+            android:indeterminate="false"
+            android:max="100"
+            android:progress="0"
+            android:progressTint="@color/narin_primary"
+            android:visibility="gone" />
+
         <LinearLayout
             android:id="@+id/errorLayout"
             android:layout_width="match_parent"

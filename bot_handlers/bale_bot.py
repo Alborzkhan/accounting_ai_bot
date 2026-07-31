@@ -1,14 +1,12 @@
 # bot_handlers/bale_bot.py
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import os
+import re
+import time
 from core.logging_config import setup_logging
 setup_logging()
 
-import re
-import threading
-import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from core.accounting_engine import AccountingEngine
 from core.text_command_handler import TextCommandHandler
@@ -23,18 +21,16 @@ from typing import List, Optional, Dict, Any
 from core.auth import AuthManager
 from core.notifications import NotificationService
 from core.license_manager import LicenseManager
+from ai_handlers.llm_processor import LLMProcessor
 from config import BALE_TOKEN, get_public_app_url
+from bot_handlers.base_bot import BaseBot
+BOT_NAME = "نارین"
 BASE_URL = f"https://tapi.bale.ai/bot{BALE_TOKEN}/"
 
-class BaleBot:
+class BaleBot(BaseBot):
     def __init__(self) -> None:
-        self.engine = AccountingEngine()
-        self.text_handler = TextCommandHandler(self.engine)
-        self.smart_dialog = SmartDialogEngine(self.engine)
-        self.voice_handler = VoiceToAccounting(model_size="base")
-        self.auth_manager = AuthManager()
-        self.notifier = NotificationService()
-        self.license_manager = LicenseManager()
+        super().__init__()
+        os.makedirs("voice_files", exist_ok=True)
         self.last_update_id = 0
         self.user_states: Dict[int, dict] = {}
 
@@ -204,7 +200,7 @@ class BaleBot:
             response = requests.post(url, json=payload)
             file_path = response.json().get('result', {}).get('file_path')
             if file_path:
-                file_url = f"https://tapi.bale.ai/file/bot{TOKEN}/{file_path}"
+                file_url = f"https://tapi.bale.ai/file/bot{BALE_TOKEN}/{file_path}"
                 file_response = requests.get(file_url)
                 with open(save_path, 'wb') as f:
                     f.write(file_response.content)
@@ -226,23 +222,25 @@ class BaleBot:
             try:
                 data, transcript = self.voice_handler.voice_to_voucher(file_path)
 
-                if data["type"] and data["amount"] > 0:
+                amount = data.get("amount", 0)
+                if data["type"] and amount >= 1000:
+                    lic = self.license_manager.can_create_voucher(user_id)
+                    if not lic.get("allowed", True):
+                        self.send_message(chat_id, f"❌ {lic.get('message', 'محدودیت مجوز')}")
+                        return
                     entry_id = self.engine.create_voucher(
                         date=datetime.now(),
                         description=data["description"],
                         lines=[
-                            (data["debit_account"], data["amount"], 'debit'),
-                            (data["credit_account"], data["amount"], 'credit')
-                        ],
-                        user_id=user_id
+                            (data["debit_account"], amount, 'debit'),
+                            (data["credit_account"], amount, 'credit')
+                        ]
                     )
                     self.send_message(
                         chat_id,
-                        f"✅ سند شماره {entry_id} با موفقیت ثبت شد.\n\n"
-                        f"💰 مبلغ: {data['amount']:,} تومان\n"
-                        f"📝 شرح: {data['description'][:100]}\n"
-                        f"📊 بدهکار: {data['debit_account']}\n"
-                        f"📊 بستانکار: {data['credit_account']}"
+                        f"✅ سند شماره {entry_id} ثبت شد.\n\n"
+                        f"💰 مبلغ: {amount:,} تومان\n"
+                        f"📝 شرح: {data['description'][:100]}"
                     )
                 else:
                     from core.ai_voucher_fallback import try_ai_voucher
@@ -250,20 +248,21 @@ class BaleBot:
                     if ai_result.get("success"):
                         self.send_message(
                             chat_id,
-                            f"✅ سند شماره {ai_result['entry_id']} با موفقیت ثبت شد. (تشخیص با هوش مصنوعی)\n\n"
+                            f"✅ سند شماره {ai_result['entry_id']} ثبت شد.\n\n"
                             f"💰 مبلغ: {ai_result['amount']:,.0f} تومان\n"
-                            f"📝 شرح: {ai_result['description'][:100]}\n"
-                            f"📊 بدهکار: {ai_result['debit_account']}\n"
-                            f"📊 بستانکار: {ai_result['credit_account']}"
+                            f"📝 شرح: {ai_result['description'][:100]}"
                         )
                     else:
                         self.send_message(
                             chat_id,
-                            "⚠️ اطلاعات ناقص است. لطفاً واضح‌تر صحبت کنید.\n\n"
-                            "مثال: 'خرید 100 عدد خودکار 5000 تومان'"
+                            "مبلغ تشخیص داده نشد. لطفاً مبلغ رو به تومان بگو.\n"
+                            "مثال: خرید ۱۰۰ خودکار ۵۰۰۰ تومان"
                         )
             except Exception as e:
-                self.send_message(chat_id, f"❌ خطا در پردازش ویس: {str(e)}")
+                self.send_message(chat_id, f"❌ خطا در پردازش ویس")
+            finally:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
         else:
             self.send_message(chat_id, "❌ خطا در دانلود فایل صوتی")
     
@@ -279,7 +278,7 @@ class BaleBot:
             if user_id:
                 self.send_app_button(
                     chat_id,
-                    "🤖 به نارین، حسابدار هوشمند خوش آمدید!\n\n"
+                    f"🤖 به {BOT_NAME}، حسابدار هوشمند خوش آمدید!\n\n"
                     "🎤 قابلیت‌ها:\n"
                     "• ارسال ویس برای ثبت خودکار سند\n"
                     "• تایپ متن ساده\n"
@@ -298,7 +297,10 @@ class BaleBot:
                 "📋 راهنمای دستورات:\n\n"
                 "/start - شروع مجدد\n"
                 "/report - دریافت گزارش PDF تراز آزمایشی\n"
-                "/help - نمایش این راهنما\n\n"
+                "/status - وضعیت اشتراک\n"
+                "/pricing - قیمت پلن‌ها\n"
+                "/help - نمایش این راهنما\n"
+                "/app - برنامه اختصاصی\n\n"
                 "📝 ثبت سند با متن:\n"
                 "• خرید 100 عدد خودکار 5000 تومان\n"
                 "• فروش 50 عدد کتاب 20000 تومان\n"
@@ -313,6 +315,14 @@ class BaleBot:
             )
         elif text == "/app":
             self.send_app_button(chat_id, "برای باز کردن برنامه نارین، روی دکمه پایین بزنید:")
+        elif text == "/status":
+            user_id = self.auth_manager.get_user_by_bale(str(chat_id))
+            if user_id:
+                self.handle_status(chat_id, user_id)
+            else:
+                self.send_message(chat_id, "اول /start رو بزن.")
+        elif text == "/pricing":
+            self.handle_pricing(chat_id)
         elif text == "/report":
             user_id = self.auth_manager.get_user_by_bale(str(chat_id))
             if not user_id:
@@ -326,27 +336,105 @@ class BaleBot:
                 self.send_document(chat_id, pdf_file)
                 os.remove(pdf_file)
             except Exception as e:
-                self.send_message(chat_id, f"❌ خطا در تولید گزارش: {str(e)}")
+                self.send_message(chat_id, f"❌ خطا در تولید گزارش")
         else:
             user_id = self.auth_manager.get_user_by_bale(str(chat_id))
             if not user_id:
                 self.send_message(chat_id, "به نظر میاد هنوز ثبت نام نکردی.\nبرای شروع /start رو بزن.")
                 return
-            # ابتدا سعی می‌کنیم با موتور هوشمند پردازش کنیم
-            response = self.smart_dialog.process_message(user_id, text)
-            if "متوجه نشدم" in response:
-                # اگر موتور هوشمند نفهمید، از موتور متنی استفاده کن
-                result = self.text_handler.parse_and_create_voucher(text, user_id=user_id)
-                if not result["success"]:
-                    from core.ai_voucher_fallback import try_ai_voucher
-                    ai_result = try_ai_voucher(self.engine, text, user_id)
-                    if ai_result.get("success"):
-                        result = ai_result
+
+            # بررسی کامل بودن پروفایل
+            profile = self.auth_manager.get_user_profile(user_id)
+            if profile and (not profile["business_type"] or not profile["business_name"]):
+                self.send_message(chat_id, "هنوز اطلاعات کسب و کارت رو ثبت نکردی!\nکسب و کارت تو چه زمینه‌ایه؟\nمثلاً: بازرگانی عمومی، آهن‌آلات، آرایشگاهی")
+                self.user_states[chat_id] = {"state": "onboarding_business_type", "reg_mobile": profile.get("mobile", "")}
+                return
+
+            # تشخیص درخواست اطلاعات من
+            profile_keywords = ["کسب", "کارم", "شغل", "پروفایل", "اطلاعات", "لوگو", "شماره",
+                               "تلفن", "شناسه", "اقتصادی", "آدرس", "دفتر", "همراه",
+                               "اطلاعات من", "پروفایل من"]
+            if any(k in text for k in profile_keywords):
+                if profile:
+                    msg = (
+                        f"📋 {profile.get('name', 'کاربر')} جان\n\n"
+                        f"🏢 {profile.get('business_name', '') or 'نامشخص'} ({profile.get('business_type', '') or 'نامشخص'})\n\n"
+                    )
+                    if profile.get("phone_office"): msg += f"📞 دفتر: {profile['phone_office']}\n"
+                    if profile.get("phone_mobile"): msg += f"📱 همراه: {profile['phone_mobile']}\n"
+                    if profile.get("national_id"): msg += f"🆔 ملی: {profile['national_id']}\n"
+                    if profile.get("economic_code"): msg += f"💰 اقتصادی: {profile['economic_code']}\n"
+                    if profile.get("address"): msg += f"📍 آدرس: {profile['address']}\n"
+                    msg += "\nبرای ویرایش، هر کدوم رو به این شکل بفرست:\n"
+                    msg += "تلفن دفتر: ۰۲۱۱۲۳۴۵۶۷۸\n"
+                    msg += "تلفن همراه: ۰۹۱۲۳۴۵۶۷۸۹\n"
+                    msg += "شناسه ملی: ۱۲۳۴۵۶۷۸۹۰\n"
+                    msg += "کد اقتصادی: ۱۲۳۴۵۶۷۸۹۰"
+                    self.send_message(chat_id, msg)
+                return
+
+            # تشخیص سلام و احوالپرسی
+            greetings = ["سلام", "علیک", "درود", "خوبی", "hi", "hello", "سلا", "مرسی", "ممنون", "چطوری", "خوبم"]
+            if any(g in text for g in greetings) and not any(k in text for k in ["خرید", "فروش", "پرداخت", "دریافت", "پول", "هزار", "میلیون", "تومان"]):
+                self.send_message(
+                    chat_id,
+                    f"سلام! {BOT_NAME} هستم 🤖 حسابدار شخصی شما\n"
+                    "هر کاری داری بگو. می‌تونم:\n\n"
+                    "📝 ثبت سند حسابداری\n"
+                    "💰 مانده حساب مشتریان\n"
+                    "📊 گزارش بگیرم\n"
+                    "🎤 ویس تو بفهمم\n\n"
+                    "چطور می‌تونم کمکت کنم؟"
+                )
+                return
+
+            # پردازش با LLM اول
+            result = None
+            try:
+                result = self.llm.process(text)
+            except Exception:
+                pass
+
+            if result and result.get("success"):
+                amount = result.get("amount", 0)
+                if amount < 1000:
+                    self.send_message(chat_id, "مبلغ تشخیص داده نشد یا خیلی کمه.\nلطفاً مبلغ رو به تومان بگو:\nمثلاً: خرید ۱۰۰ خودکار ۵۰۰۰ تومان")
+                    return
+                lic = self.license_manager.can_create_voucher(user_id)
+                if not lic.get("allowed", True):
+                    self.send_message(chat_id, f"❌ {lic.get('message', 'محدودیت مجوز')}")
+                    return
+                entry_id = self.engine.create_voucher(
+                    date=datetime.now(),
+                    description=result["description"],
+                    lines=[
+                        (result["debit_account"], amount, 'debit'),
+                        (result["credit_account"], amount, 'credit')
+                    ]
+                )
+                self.send_message(
+                    chat_id,
+                    f"✅ سند شماره {entry_id} ثبت شد.\n"
+                    f"💰 مبلغ: {amount:,} تومان\n"
+                    f"📝 شرح: {result['description'][:100]}"
+                )
+            elif result and result.get("type") == "general":
                 self.send_message(chat_id, result["message"])
             else:
-                self.send_message(chat_id, response)
-            if user_id:
-                self.send_notification_if_needed(chat_id, user_id)
+                # Fallback به موتور هوشمند و rule-based
+                response = self.smart_dialog.process_message(user_id, text)
+                if "متوجه نشدم" in response:
+                    fb = self.text_handler.parse_and_create_voucher(text, user_id=user_id)
+                    if not fb.get("success"):
+                        from core.ai_voucher_fallback import try_ai_voucher
+                        ai_result = try_ai_voucher(self.engine, text, user_id)
+                        if ai_result.get("success"):
+                            fb = ai_result
+                    self.send_message(chat_id, fb["message"])
+                else:
+                    self.send_message(chat_id, response)
+
+            self.send_notification_if_needed(chat_id, user_id)
     
     def send_notification_if_needed(self, chat_id: int, user_id: int):
         msg = self.notifier.check_renewal_reminder(user_id)
@@ -395,6 +483,7 @@ class BaleBot:
         """حلقه اصلی ربات"""
         print("✅ ربات بله روشن شد...")
         print("ربات در حال اجراست. برای تست به ربات در بله پیام بدهید.")
+        pool = ThreadPoolExecutor(max_workers=10)
         
         while True:
             try:
@@ -408,19 +497,18 @@ class BaleBot:
                     if not chat_id:
                         continue
                     
-                    # بررسی نوع پیام - هرکدام در ترد جدا، تا پردازش ویس (که چند ثانیه طول می‌کشد)
-                    # بقیه‌ی کاربران را پشت صف نگه ندارد
                     if 'voice' in message:
                         file_id = message['voice'].get('file_id')
                         message_id = message.get('message_id')
-                        threading.Thread(target=self.handle_voice, args=(chat_id, file_id, message_id), daemon=True).start()
+                        pool.submit(self.handle_voice, chat_id, file_id, message_id)
                     elif 'text' in message:
                         text = message['text']
-                        threading.Thread(target=self.handle_text, args=(chat_id, text), daemon=True).start()
+                        pool.submit(self.handle_text, chat_id, text)
 
                 time.sleep(1)
             except KeyboardInterrupt:
                 print("\n👋 ربات متوقف شد.")
+                pool.shutdown(wait=False)
                 break
             except Exception as e:
                 print(f"خطا: {e}")

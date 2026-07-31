@@ -7,8 +7,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>نارین | حسابدار هوشمند</title>
-    <link id="faviconLink" rel="icon" href="">
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link id="faviconLink" rel="icon" href="/favicon.ico">
+    <script>/* مقداردهی اولیه SDK مینی‌اپ - قبل از هر چیزی */ try { if(window.Bale){window.Bale.ready();window.Bale.expand();} } catch(e){} try { if(window.Telegram?.WebApp){window.Telegram.WebApp.ready();window.Telegram.WebApp.expand();} } catch(e){} </script>
+    <script>/* بارگذاری غیرهمزمان SDK تلگرام */ try { var s=document.createElement('script'); s.src='https://telegram.org/js/telegram-web-app.js'; s.async=true; document.head.appendChild(s); } catch(e){} </script>
     <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
@@ -29,12 +30,24 @@
 
         html, body { min-height: 100%; }
 
+        /* اسکرول‌های مخفی اما فعال */
+        ::-webkit-scrollbar { width: 0; height: 0; background: transparent; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: transparent; }
+        * { scrollbar-width: none; -ms-overflow-style: none; }
+
         body {
             font-family: 'Vazirmatn', 'IranYekan', Tahoma, sans-serif;
             color: var(--ink);
             min-height: 100vh;
             overflow-x: hidden;
+            overflow-y: auto;
         }
+        /* اسکرول‌های مخفی اما فعال */
+        body::-webkit-scrollbar { width: 0; height: 0; background: transparent; }
+        body::-webkit-scrollbar-track { background: transparent; }
+        body::-webkit-scrollbar-thumb { background: transparent; }
+        * { scrollbar-width: none; -ms-overflow-style: none; }
 
         /* پس‌زمینه موشی رنگی الهام‌گرفته از والپیپر اپل، بدون نیاز به فایل تصویر */
         .bg-mesh {
@@ -211,22 +224,61 @@
         .income-color { color: var(--income); }
         .expense-color { color: var(--expense); }
 
-        /* شبکه آیکون‌ها مثل صفحه هوم آیفون */
-        .app-grid-main {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 10px;
-            margin-bottom: 12px;
+        /* دکمه‌های اصلی (ثبت سند و فرمان صوتی) - بیرون اسلایدر */
+
+        .slider-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 8px;
+            width: 100%;
         }
-        .app-grid-secondary {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
-            margin-bottom: 28px;
-            max-width: 80%;
-            margin-left: auto;
-            margin-right: auto;
+        .slider-viewport {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            position: relative;
+            padding: 4px 0 8px;
         }
+        .slider-track {
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 6px;
+            transition: transform 0.3s ease;
+            will-change: transform;
+        }
+        .slider-track > .app-tile {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            user-select: none;
+            flex: 0 0 auto;
+            min-width: 72px;
+        }
+        .slider-arrow {
+            width: 30px; height: 30px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.4);
+            background: rgba(255,255,255,0.6);
+            backdrop-filter: blur(8px);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--ink);
+            flex-shrink: 0;
+            flex-grow: 0;
+            transition: 0.15s;
+            user-select: none;
+            z-index: 5;
+        }
+        .slider-arrow:active { background: rgba(255,255,255,0.8); transform: scale(0.92); }
+        .slider-arrow.disabled { opacity: 0.3; cursor: default; pointer-events: none; }
 
         .app-tile {
             display: flex;
@@ -276,7 +328,7 @@
         .section-header { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 14px; }
         .section-header h3 { font-size: 17px; font-weight: 700; }
 
-        .categories-list { display: flex; flex-direction: column; gap: 10px; }
+        .categories-list { display: flex; flex-direction: column; gap: 10px; max-width: 400px; margin: 0 auto; }
 
         .cat-item { border-radius: var(--radius-md); overflow: hidden; }
         .cat-item, .detail-card, .voucher-modal, .voice-modal, .sheet, .chart-container, .toast-message {
@@ -291,7 +343,7 @@
         .cat-chevron { font-size: 16px; font-weight: 700; color: var(--ink-soft); transition: 0.2s; width: 28px; text-align: center; }
 
         .sub-accounts { max-height: 0; overflow: hidden; transition: 0.25s ease; background: rgba(255, 255, 255, 0.25); padding: 0 18px; }
-        .sub-accounts.open { max-height: 320px; padding: 8px 18px 12px; border-top: 1px solid rgba(0, 0, 0, 0.05); }
+        .sub-accounts.open { max-height: 600px; padding: 8px 18px 12px; border-top: 1px solid rgba(0, 0, 0, 0.05); }
         .sub-account { padding: 10px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.05); font-size: 13px; font-weight: 500; display: flex; justify-content: space-between; cursor: pointer; }
         .empty-sub { padding: 10px 0; font-size: 12px; color: var(--ink-soft); font-style: italic; }
 
@@ -473,65 +525,96 @@
             </div>
         </div>
 
-        <!-- ردیف اول: ۵ آیکون اصلی -->
-        <div class="app-grid-main">
-            <div class="app-tile" id="openVoucherBtn">
-                <div class="app-icon icon-blue">
+        <!-- ردیف اول: ثبت سند و فرمان صوتی (دکمه‌های اصلی، بیرون اسلایدر) -->
+        <div style="display:flex; gap:10px; margin-bottom:14px;">
+            <div class="app-tile" id="openVoucherBtn" style="flex:1;">
+                <div class="app-icon icon-blue" style="width:64px; height:64px;">
                     <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v4h4"/><line x1="8.5" y1="12" x2="15.5" y2="12"/><line x1="8.5" y1="15.5" x2="15.5" y2="15.5"/></svg>
                 </div>
                 <span>ثبت سند</span>
             </div>
-            <div class="app-tile" id="cashTile">
-                <div class="app-icon icon-emerald">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><path d="M6 15h.01M10 15h4"/></svg>
-                </div>
-                <span>صندوق/بانک</span>
-            </div>
-            <div class="app-tile" id="invoiceTile">
-                <div class="app-icon icon-teal">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v19l-2.2-1.4L14 21l-2-1.4L10 21l-1.8-1.4L6 21V2z"/><line x1="8.7" y1="7" x2="15.3" y2="7"/><line x1="8.7" y1="10.5" x2="15.3" y2="10.5"/><line x1="8.7" y1="14" x2="13" y2="14"/></svg>
-                </div>
-                <span>فاکتور</span>
-            </div>
-            <div class="app-tile" id="reportsTile">
-                <div class="app-icon icon-green">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16M9 19v-6M14 19V9M19 19v-4"/></svg>
-                </div>
-                <span>گزارشات</span>
-            </div>
-            <div class="app-tile" id="voiceMainBtn">
-                <div class="app-icon icon-red">
+            <div class="app-tile" id="voiceMainBtn" style="flex:1;">
+                <div class="app-icon icon-red" style="width:64px; height:64px;">
                     <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/><line x1="8" y1="21" x2="16" y2="21"/></svg>
                 </div>
                 <span>فرمان صوتی</span>
             </div>
         </div>
-        <!-- ردیف دوم: ۴ آیکون فرعی، وسط‌چین -->
-        <div class="app-grid-secondary">
-            <div class="app-tile" id="settingsTile">
-                <div class="app-icon icon-gray">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M2.5 12h3M18.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/></svg>
+
+        <!-- اسلایدر افقی برای بقیه دکمه‌ها با دکمه‌های چپ/راست -->
+        <div class="section-header" style="margin-bottom:6px;"><h3 style="font-size:14px;">ابزارها</h3></div>
+        <div class="slider-wrapper">
+            <div class="slider-arrow" id="sliderLeftBtn">‹</div>
+            <div class="slider-viewport"><div class="slider-track" id="toolSliderTrack">
+                <div class="app-tile" id="cashTile">
+                    <div class="app-icon icon-emerald" style="width:52px; height:52px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><path d="M6 15h.01M10 15h4"/></svg>
+                    </div>
+                    <span>صندوق/بانک</span>
                 </div>
-                <span>تنظیمات</span>
-            </div>
-            <div class="app-tile" id="profileTile">
-                <div class="app-icon icon-orange">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
+                <div class="app-tile" id="invoiceTile">
+                    <div class="app-icon icon-teal" style="width:52px; height:52px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v19l-2.2-1.4L14 21l-2-1.4L10 21l-1.8-1.4L6 21V2z"/><line x1="8.7" y1="7" x2="15.3" y2="7"/><line x1="8.7" y1="10.5" x2="15.3" y2="10.5"/><line x1="8.7" y1="14" x2="13" y2="14"/></svg>
+                    </div>
+                    <span>فاکتور</span>
                 </div>
-                <span>پروفایل</span>
-            </div>
-            <div class="app-tile" id="pricingTile">
-                <div class="app-icon icon-purple">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l4-6h10l4 6-9 12L3 9z"/><path d="M3 9h18"/><path d="M9 3l3 6 3-6"/></svg>
+                <div class="app-tile" id="reportsTile">
+                    <div class="app-icon icon-green" style="width:52px; height:52px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16M9 19v-6M14 19V9M19 19v-4"/></svg>
+                    </div>
+                    <span>گزارشات</span>
                 </div>
-                <span>اشتراک</span>
-            </div>
-            <div class="app-tile" id="supportTile">
-                <div class="app-icon icon-indigo">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7v3a3 3 0 0 0 3 3h1v-7H6v-1a6 6 0 0 1 12 0v1h-3v7h1a3 3 0 0 0 3-3v-3a7 7 0 0 0-7-7z"/><path d="M9 19a3 3 0 0 0 6 0"/></svg>
+                <div class="app-tile" id="dashboardTile">
+                    <div class="app-icon icon-blue" style="width:52px; height:52px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16M9 19v-6M14 19V9M19 19v-4"/><line x1="2" y1="21" x2="22" y2="21"/></svg>
+                    </div>
+                    <span>داشبورد</span>
                 </div>
-                <span>پشتیبانی</span>
+                <div class="app-tile" id="budgetTile">
+                    <div class="app-icon icon-emerald" style="width:52px; height:52px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M16 2v4M8 2v4"/><rect x="2" y="6" width="20" height="16" rx="2"/><path d="M16 12h-4v4h4"/><path d="M8 14h.01"/></svg>
+                    </div>
+                    <span>بودجه</span>
+                </div>
+                <div class="app-tile" id="recurringTile">
+                    <div class="app-icon icon-purple" style="width:52px; height:52px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M12 6v6l3 2"/><path d="M21 3v5h-5"/></svg>
+                    </div>
+                    <span>دوره‌ای</span>
+                </div>
+                <div class="app-tile" id="exportTile">
+                    <div class="app-icon icon-orange" style="width:52px; height:52px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </div>
+                    <span>خروجی</span>
+                </div>
+                <div class="app-tile" id="settingsTile">
+                    <div class="app-icon icon-gray" style="width:52px; height:52px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M2.5 12h3M18.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/></svg>
+                    </div>
+                    <span>تنظیمات</span>
+                </div>
+                <div class="app-tile" id="profileTile">
+                    <div class="app-icon icon-orange" style="width:52px; height:52px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
+                    </div>
+                    <span>پروفایل</span>
+                </div>
+                <div class="app-tile" id="pricingTile">
+                    <div class="app-icon icon-purple" style="width:52px; height:52px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l4-6h10l4 6-9 12L3 9z"/><path d="M3 9h18"/><path d="M9 3l3 6 3-6"/></svg>
+                    </div>
+                    <span>اشتراک</span>
+                </div>
+                <div class="app-tile" id="supportTile">
+                    <div class="app-icon icon-indigo" style="width:52px; height:52px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7v3a3 3 0 0 0 3 3h1v-7H6v-1a6 6 0 0 1 12 0v1h-3v7h1a3 3 0 0 0 3-3v-3a7 7 0 0 0-7-7z"/><path d="M9 19a3 3 0 0 0 6 0"/></svg>
+                    </div>
+                    <span>پشتیبانی</span>
+                </div>
             </div>
+            </div>
+            <div class="slider-arrow" id="sliderRightBtn">›</div>
         </div>
 
         <div class="section-header"><h3>دسته‌بندی حسابداری</h3></div>
@@ -545,6 +628,58 @@
 <div id="voucherModal" class="voucher-modal">
     <div class="modal-title">ثبت سند جدید</div>
     <textarea id="voucherDesc" rows="3" placeholder="مثال: خرید 100 عدد خودکار 5000 تومان"></textarea>
+    <div class="form-grid-2" style="margin-top:8px;">
+        <div class="form-row">
+            <label>نوع درآمد</label>
+            <select id="incomeAccountSelect">
+                <optgroup label="فروش کالا و خدمات">
+                    <option value="4101">فروش کالا - عمده (4101)</option>
+                    <option value="4102">فروش کالا - خرده (4102)</option>
+                    <option value="4301">فروش خدمات (4301)</option>
+                    <option value="4302">کمیسیون دریافتی (4302)</option>
+                    <option value="4201">فروش محصولات (4201) - تولیدی</option>
+                </optgroup>
+                <optgroup label="درآمدهای اختصاصی">
+                    <option value="4401">درآمد پیمانکاری (4401)</option>
+                    <option value="4501">درآمد شارژ ساختمان (4501)</option>
+                </optgroup>
+                <optgroup label="سایر درآمدها">
+                    <option value="4611">تخفیفات نقدی (4611)</option>
+                    <option value="4613">سود سپرده بانکی (4613)</option>
+                    <option value="4614">فروش ضایعات (4614)</option>
+                    <option value="4615">جریمه تاخیر مشتریان (4615)</option>
+                    <option value="4601">سایر درآمد - متفرقه (4601)</option>
+                </optgroup>
+            </select>
+        </div>
+        <div class="form-row">
+            <label>نوع هزینه</label>
+            <select id="expenseAccountSelect">
+                <optgroup label="بهای تمام شده">
+                    <option value="5111">خرید کالا - عمده (5111)</option>
+                    <option value="5112">خرید کالا - خرده (5112)</option>
+                    <option value="5113">هزینه حمل خرید (5113)</option>
+                    <option value="5201">بهای تمام شده تولید (5201)</option>
+                </optgroup>
+                <optgroup label="هزینه‌های اداری">
+                    <option value="5601">حقوق و دستمزد (5601)</option>
+                    <option value="5602">اجاره (5602)</option>
+                    <option value="5604">تعمیرات (5604)</option>
+                    <option value="5606">بیمه (5606)</option>
+                    <option value="5609">آب و برق (5609)</option>
+                    <option value="5610">تلفن و اینترنت (5610)</option>
+                    <option value="5611">لوازم تحریر (5611)</option>
+                    <option value="5613">پذیرایی (5613)</option>
+                </optgroup>
+                <optgroup label="هزینه‌های فروش و مالی">
+                    <option value="5603">حمل و نقل (5603)</option>
+                    <option value="5605">کارمزد / کمیسیون (5605)</option>
+                    <option value="5607">تبلیغات (5607)</option>
+                    <option value="5608">مالیاتی (5608)</option>
+                </optgroup>
+            </select>
+        </div>
+    </div>
     <div class="modal-buttons">
         <button class="modal-btn" id="cancelVoucherBtn">لغو</button>
         <button class="modal-btn modal-btn-primary" id="confirmVoucherBtn">ثبت سند</button>
@@ -728,6 +863,12 @@
     <div class="modal-title">فاکتور و پیش‌فاکتور</div>
 
     <div id="invoiceStepInput">
+        <div style="background:rgba(79,172,254,0.12); border-radius:12px; padding:12px; margin-bottom:14px; font-size:12.5px; line-height:1.8; border:1px solid rgba(79,172,254,0.2);">
+            <strong>📌 راهنما:</strong><br>
+            • برای ثبت <strong>پیش‌فاکتور</strong> یا <strong>فاکتور فروش/خرید</strong>، دکمه «ثبت دستی» را بزنید.<br>
+            • اگر توضیح متنی دارید، می‌توانید بنویسید و «بررسی فاکتور» را بزنید تا اطلاعات به صورت خودکار استخراج شود.<br>
+            • نوع سند (فاکتور فروش، پیش‌فاکتور، فاکتور خرید) در مرحله بعد انتخاب می‌شود.
+        </div>
         <textarea id="invoiceDescInput" rows="3" placeholder="مثال: فاکتور فروش به آقای رضایی، ۵ عدد میز ۸۰۰ هزار تومان، رسمی با ۹ درصد مالیات"></textarea>
         <div class="voice-control">
             <div class="voice-small-btn" id="invoiceMicBtn"><span class="mic-icon-new"></span> توضیح با صدا</div>
@@ -809,6 +950,141 @@
     </div>
     <div id="pricingPlansList"></div>
     <button class="modal-btn" id="closePricingBtn">بستن</button>
+</div>
+
+<!-- ===== NEW: داشبورد تحلیلی ===== -->
+<div id="dashboardSheet" class="sheet" style="max-width:520px;">
+    <div class="modal-title">📊 داشبورد تحلیلی</div>
+    <div class="form-grid-2" style="margin-bottom:12px;">
+        <div class="stat-box" style="background:rgba(255,255,255,0.5); border-radius:12px; padding:12px; text-align:center;">
+            <div style="font-size:11px; color:var(--ink-soft);">درآمد کل</div>
+            <div id="dashTotalIncome" style="font-size:20px; font-weight:700; color:var(--income);">0</div>
+        </div>
+        <div class="stat-box" style="background:rgba(255,255,255,0.5); border-radius:12px; padding:12px; text-align:center;">
+            <div style="font-size:11px; color:var(--ink-soft);">هزینه کل</div>
+            <div id="dashTotalExpense" style="font-size:20px; font-weight:700; color:var(--expense);">0</div>
+        </div>
+    </div>
+    <div class="form-grid-2" style="margin-bottom:14px;">
+        <div class="stat-box" style="background:rgba(255,255,255,0.5); border-radius:12px; padding:12px; text-align:center;">
+            <div style="font-size:11px; color:var(--ink-soft);">سود خالص</div>
+            <div id="dashNetProfit" style="font-size:20px; font-weight:700; color:var(--income);">0</div>
+        </div>
+        <div class="stat-box" style="background:rgba(255,255,255,0.5); border-radius:12px; padding:12px; text-align:center;">
+            <div style="font-size:11px; color:var(--ink-soft);">تعداد اسناد</div>
+            <div id="dashVoucherCount" style="font-size:20px; font-weight:700; color:var(--ink);">0</div>
+        </div>
+    </div>
+    <div class="chart-container" style="height:220px;">
+        <canvas id="dashIncomeExpenseChart"></canvas>
+    </div>
+    <div class="chart-container" style="height:200px; margin-top:10px;">
+        <canvas id="dashExpensePieChart"></canvas>
+    </div>
+    <div class="chart-container" style="height:200px; margin-top:10px;">
+        <canvas id="dashCashflowChart"></canvas>
+    </div>
+    <div class="modal-buttons">
+        <button class="modal-btn" id="closeDashboardBtn">بستن</button>
+    </div>
+</div>
+
+<!-- ===== NEW: مدیریت بودجه ===== -->
+<div id="budgetSheet" class="sheet" style="max-width:480px;">
+    <div class="modal-title">💰 مدیریت بودجه</div>
+    <div class="form-grid-2">
+        <div class="form-row"><label>سال (شمسی)</label><select id="budgetYear"></select></div>
+        <div class="form-row"><label>ماه (شمسی)</label><select id="budgetMonth"></select></div>
+    </div>
+    <div class="form-row">
+        <label>کد حساب</label>
+        <select id="budgetAccountCode">
+            <option value="5601">هزینه حقوق (5601)</option>
+            <option value="5602">هزینه اجاره (5602)</option>
+            <option value="5603">هزینه حمل (5603)</option>
+            <option value="5604">هزینه تعمیرات (5604)</option>
+            <option value="5605">هزینه کارمزد (5605)</option>
+            <option value="5606">هزینه بیمه (5606)</option>
+            <option value="5607">هزینه تبلیغات (5607)</option>
+            <option value="5608">هزینه مالیاتی (5608)</option>
+            <option value="5609">هزینه آب و برق (5609)</option>
+            <option value="5610">هزینه تلفن (5610)</option>
+        </select>
+    </div>
+    <div class="form-grid-2">
+        <div class="form-row"><label>مبلغ بودجه (تومان)</label><input id="budgetAmount" type="number" placeholder="مثلاً 5000000"></div>
+        <button class="modal-btn modal-btn-primary" id="setBudgetBtn" style="margin-top:22px;">ثبت بودجه</button>
+    </div>
+    <div class="voice-control" style="margin:6px 0;">
+        <div class="voice-small-btn" id="budgetVoiceBtn"><span class="mic-icon-new"></span> ثبت با ویس</div>
+    </div>
+    <div id="budgetVsActual" class="sub-detail-list" style="margin-top:14px;">
+        <div style="font-weight:600; margin-bottom:8px;">مقایسه بودجه vs واقعی</div>
+        <div id="budgetList">برای مشاهده، ابتدا بودجه ثبت کنید.</div>
+    </div>
+    <div class="modal-buttons">
+        <button class="modal-btn" id="closeBudgetBtn">بستن</button>
+    </div>
+</div>
+
+<!-- ===== NEW: اسناد دوره‌ای ===== -->
+<div id="recurringSheet" class="sheet" style="max-width:480px;">
+    <div class="modal-title">🔄 اسناد دوره‌ای</div>
+    <div class="form-row"><label>عنوان</label><input id="recTitle" type="text" placeholder="مثلاً: پرداخت اجاره"></div>
+    <div class="form-row"><label>شرح</label><input id="recDesc" type="text" placeholder="شرح سند"></div>
+    <div class="form-grid-2">
+        <div class="form-row">
+            <label>فرکانس</label>
+            <select id="recFreq">
+                <option value="monthly">ماهانه</option>
+                <option value="weekly">هفتگی</option>
+                <option value="quarterly">سه ماهه</option>
+                <option value="semi_annual">شش ماهه</option>
+                <option value="annual">سالانه</option>
+            </select>
+        </div>
+        <div class="form-row"><label>مبلغ (تومان)</label><input id="recAmount" type="number" placeholder="مبلغ"></div>
+    </div>
+    <div class="form-grid-2">
+        <div class="form-row">
+            <label>حساب بدهکار</label>
+            <select id="recDebit">
+                <option value="5602">اجاره (5602)</option>
+                <option value="5601">حقوق (5601)</option>
+                <option value="5609">آب و برق (5609)</option>
+                <option value="5610">تلفن (5610)</option>
+                <option value="1201">خرید کالا (1201)</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <label>حساب بستانکار</label>
+            <select id="recCredit">
+                <option value="1001">صندوق (1001)</option>
+                <option value="1002">بانک (1002)</option>
+                <option value="2001">بستانکاران (2001)</option>
+            </select>
+        </div>
+    </div>
+    <button class="modal-btn modal-btn-primary" id="createRecBtn" style="margin-bottom:14px;">➕ ایجاد سند دوره‌ای</button>
+    <div style="font-weight:600; margin-bottom:6px;">اسناد دوره‌ای فعال</div>
+    <div id="recList" class="sub-detail-list">در حال بارگذاری...</div>
+    <div class="modal-buttons">
+        <button class="modal-btn" id="closeRecurringBtn">بستن</button>
+    </div>
+</div>
+
+<!-- ===== NEW: خروجی / Export ===== -->
+<div id="exportSheet" class="sheet" style="max-width:480px;">
+    <div class="modal-title">📥 خروجی گرفتن</div>
+    <p class="hint-text">داده‌های خود را در فرمت‌های مختلف دریافت کنید.</p>
+    <button class="modal-btn" id="exportJournalCsvBtn" style="margin-bottom:8px;">📄 خروجی CSV اسناد</button>
+    <button class="modal-btn" id="exportJournalExcelBtn" style="margin-bottom:8px;">📗 خروجی Excel اسناد</button>
+    <button class="modal-btn" id="exportTrialBalanceCsvBtn" style="margin-bottom:8px;">📊 خروجی تراز آزمایشی</button>
+    <button class="modal-btn" id="exportCustomersCsvBtn" style="margin-bottom:8px;">👤 خروجی مشتریان</button>
+    <button class="modal-btn" id="exportVendorsCsvBtn" style="margin-bottom:8px;">🏢 خروجی فروشندگان</button>
+    <div class="modal-buttons">
+        <button class="modal-btn" id="closeExportBtn">بستن</button>
+    </div>
 </div>
 
 <div id="reportsSheet" class="sheet" style="max-width:480px;">
@@ -1034,8 +1310,9 @@
             const data = await res.json();
             if (!data.success) { showToast(msgOf(data, 'دانلود ممکن نشد'), true); return; }
             const fullUrl = location.origin + data.url;
-            if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openLink) {
-                window.Telegram.WebApp.openLink(fullUrl);
+            var ma = getMiniApp();
+            if (ma && ma.openLink) {
+                ma.openLink(fullUrl);
             } else {
                 window.open(fullUrl, '_blank');
             }
@@ -1207,6 +1484,14 @@
     document.getElementById('verifyOtpBtn').onclick = verifyOtp;
     document.getElementById('resendOtpBtn').onclick = requestOtp;
     wireOtpBoxes();
+
+    // پشتیبانی از دکمه Enter در ورود
+    document.getElementById('mobileInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); requestOtp(); }
+    });
+    document.getElementById('nameInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); requestOtp(); }
+    });
 
     /* ===================== نمودار ===================== */
     let currentChart = null;
@@ -1507,12 +1792,18 @@
     document.getElementById('confirmVoucherBtn').onclick = async () => {
         const descInput = document.getElementById('voucherDesc');
         const desc = descInput.value;
+        const incomeAcc = document.getElementById('incomeAccountSelect').value;
+        const expenseAcc = document.getElementById('expenseAccountSelect').value;
         if (!desc.trim()) { showToast("متن سند را وارد کنید", true); return; }
         try {
+            const params = new URLSearchParams();
+            params.set('description', desc);
+            params.set('income_account', incomeAcc);
+            params.set('expense_account', expenseAcc);
             const res = await fetchWithTimeout('/create_voucher', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'description=' + encodeURIComponent(desc)
+                body: params.toString()
             }, 30000);
             const json = await res.json();
             showToast(msgOf(json, 'خطایی رخ داد'), !json.success);
@@ -1677,8 +1968,6 @@
         await fetch('/logout');
         location.reload();
     };
-
-    document.getElementById('pricingTile').onclick = () => { location.href = '/pricing'; };
 
     /* ===================== تنظیمات کسب‌وکار ===================== */
     function openSettingsSheet() {
@@ -2192,8 +2481,6 @@
         document.getElementById('overlay').classList.remove('active');
         document.getElementById('supportSheet').classList.remove('active');
     }
-    document.getElementById('supportTile').onclick = openSupportSheet;
-
     let bankAccountsCache = [];
 
     async function loadBankAccountsData() {
@@ -2309,6 +2596,7 @@
     document.getElementById('cashVoiceBtn').addEventListener('click', () => {
         showToast('دکمه فرمان صوتی را در صفحه اصلی بزنید و شرح تراکنش را بگویید', false);
     });
+    document.getElementById('supportTile').onclick = openSupportSheet;
     document.getElementById('closeSupportBtn').onclick = closeSupportSheet;
 
     /* ===================== راهنمای خوش‌آمدگویی برای کاربر جدید ===================== */
@@ -2747,7 +3035,7 @@
         });
     }
 
-    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet(); closeWelcomeGuideSheet(); closePricingSheet(); });
+    document.getElementById('overlay').addEventListener('click', () => { closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet(); closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet(); closeWelcomeGuideSheet(); closePricingSheet(); closeDashboardSheet(); closeBudgetSheet(); closeRecurringSheet(); closeExportSheet(); });
 
     /* ===================== مینی‌اپ تلگرام: دکمه بازگشت بومی ===================== */
     function isAnySheetOpen() {
@@ -2758,18 +3046,318 @@
         closeVoucher(); closeVoiceModal(); closeProfileSheet(); closeSettingsSheet();
         closeInvoiceSheet(); closeSupportSheet(); closeFiscalYearSheet(); closeBuildingSheet(); closeReportsSheet();
         closeWelcomeGuideSheet(); closePricingSheet(); closePartyStatementSheet(); closeOpeningBalanceSheet(); closeProductStatementSheet(); closeCashSheet();
+        closeDashboardSheet(); closeBudgetSheet(); closeRecurringSheet(); closeExportSheet();
         if (document.getElementById('detailPage').classList.contains('active')) {
             document.getElementById('closeDetailBtn').click();
         }
     }
-    if (window.Telegram && window.Telegram.WebApp) {
-        const tg = window.Telegram.WebApp;
-        tg.ready();
-        tg.expand();
-        tg.BackButton.onClick(closeAllSheets);
-        new MutationObserver(() => {
-            if (isAnySheetOpen()) tg.BackButton.show(); else tg.BackButton.hide();
-        }).observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: true });
+
+    /* ===================== NEW: داشبورد تحلیلی ===================== */
+    let dashIncomeChart = null, dashPieChart = null, dashCashflowChart = null;
+
+    function openDashboardSheet() {
+        const overlay = document.getElementById('overlay');
+        const sheet = document.getElementById('dashboardSheet');
+        overlay.classList.add('active');
+        sheet.classList.add('active');
+        loadDashboard();
+    }
+    function closeDashboardSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('dashboardSheet').classList.remove('active');
+    }
+    async function loadDashboard() {
+        try {
+            const kpiRes = await fetch('/dashboard/kpi');
+            const kpi = await kpiRes.json();
+            document.getElementById('dashTotalIncome').textContent = (kpi.total_income || 0).toLocaleString() + ' تومان';
+            document.getElementById('dashTotalExpense').textContent = (kpi.total_expense || 0).toLocaleString() + ' تومان';
+            document.getElementById('dashNetProfit').textContent = (kpi.net_profit || 0).toLocaleString() + ' تومان';
+            document.getElementById('dashVoucherCount').textContent = (kpi.voucher_count || 0).toLocaleString();
+
+            const monthlyRes = await fetch('/dashboard/monthly?months=12');
+            const monthly = await monthlyRes.json();
+            if (dashIncomeChart) dashIncomeChart.destroy();
+            if (monthly.labels && monthly.labels.length) {
+                const ctx = document.getElementById('dashIncomeExpenseChart').getContext('2d');
+                dashIncomeChart = new Chart(ctx, {
+                    type: 'line', data: {
+                        labels: monthly.labels,
+                        datasets: [
+                            { label: 'درآمد', data: monthly.income, borderColor: '#1f9d6e', backgroundColor: 'rgba(31,157,110,0.1)', tension: 0.3, fill: true },
+                            { label: 'هزینه', data: monthly.expense, borderColor: '#d24545', backgroundColor: 'rgba(210,69,69,0.1)', tension: 0.3, fill: true },
+                            { label: 'سود', data: monthly.profit, borderColor: '#4facfe', backgroundColor: 'rgba(79,172,254,0.1)', tension: 0.3, fill: true, borderDash: [5,5] },
+                        ]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { family: 'Vazirmatn', size: 11 } } } } }
+                });
+            }
+
+            const expRes = await fetch('/dashboard/expenses?months=3');
+            const expData = await expRes.json();
+            if (dashPieChart) dashPieChart.destroy();
+            if (expData.data && expData.data.length) {
+                const colors = ['#d24545','#e8741f','#ffb84d','#1f9d6e','#4facfe','#818cf8','#a18cd1'];
+                const pieCtx = document.getElementById('dashExpensePieChart').getContext('2d');
+                dashPieChart = new Chart(pieCtx, {
+                    type: 'doughnut', data: {
+                        labels: expData.data.map(d => d.name),
+                        datasets: [{ data: expData.data.map(d => d.amount), backgroundColor: colors.slice(0, expData.data.length) }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn', size: 10 } } } } }
+                });
+            }
+
+            const cfRes = await fetch('/dashboard/cashflow?days=30');
+            const cf = await cfRes.json();
+            if (dashCashflowChart) dashCashflowChart.destroy();
+            if (cf.labels && cf.labels.length) {
+                const cfCtx = document.getElementById('dashCashflowChart').getContext('2d');
+                dashCashflowChart = new Chart(cfCtx, {
+                    type: 'bar', data: {
+                        labels: cf.labels,
+                        datasets: [
+                            { label: 'ورودی', data: cf.inflow, backgroundColor: 'rgba(31,157,110,0.7)' },
+                            { label: 'خروجی', data: cf.outflow, backgroundColor: 'rgba(210,69,69,0.7)' },
+                        ]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { family: 'Vazirmatn', size: 11 } } } } }
+                });
+            }
+        } catch(e) { showToast('خطا در بارگذاری داشبورد', true); }
+    }
+    document.getElementById('dashboardTile').onclick = openDashboardSheet;
+    document.getElementById('closeDashboardBtn').onclick = closeDashboardSheet;
+
+    /* ===================== NEW: مدیریت بودجه ===================== */
+    function openBudgetSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('budgetSheet').classList.add('active');
+        // مقداردهی اولیه سال و ماه شمسی
+        const now = new Date();
+        const jdNow = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        // سال شمسی حدوداً 621 کمتر از میلادی
+        const shamsiYear = now.getFullYear() - 621;
+        const yearSel = document.getElementById('budgetYear');
+        yearSel.innerHTML = '';
+        for (let y = shamsiYear - 2; y <= shamsiYear + 2; y++) {
+            yearSel.innerHTML += `<option value="${y}" ${y === shamsiYear ? 'selected' : ''}>${y}</option>`;
+        }
+        const monthSel = document.getElementById('budgetMonth');
+        monthSel.innerHTML = '';
+        const monthNames = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+        // تخمین ماه شمسی: فروردین ≈ 21 March
+        const gregMonth = now.getMonth() + 1;
+        const gregDay = now.getDate();
+        let shamsiMonth = gregMonth - 3;
+        if (shamsiMonth <= 0) shamsiMonth += 12;
+        if (gregDay < 21) shamsiMonth = shamsiMonth === 1 ? 12 : shamsiMonth - 1;
+        for (let m = 1; m <= 12; m++) {
+            monthSel.innerHTML += `<option value="${m}" ${m === shamsiMonth ? 'selected' : ''}>${monthNames[m-1]}</option>`;
+        }
+        loadBudgetVsActual();
+    }
+    function closeBudgetSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('budgetSheet').classList.remove('active');
+    }
+    async function loadBudgetVsActual() {
+        const year = document.getElementById('budgetYear').value || 2026;
+        const month = document.getElementById('budgetMonth').value || 7;
+        try {
+            const res = await fetch(`/budgets/vs-actual?year=${year}&month=${month}`);
+            const data = await res.json();
+            const container = document.getElementById('budgetList');
+            if (!data.success || !data.data || !data.data.length) {
+                container.innerHTML = '<div class="hint-text">هیچ بودجه‌ای برای این ماه ثبت نشده است.</div>';
+                return;
+            }
+            container.innerHTML = data.data.map(item => {
+                const pct = item.amount > 0 ? Math.round((item.actual / item.amount) * 100) : 0;
+                const color = pct > 100 ? 'var(--expense)' : pct > 80 ? '#e8741f' : 'var(--income)';
+                return `<div class="sub-detail-item"><span>${esc(item.account_name)}</span><span style="color:${color};">${pct}% — ${item.actual.toLocaleString()} / ${item.amount.toLocaleString()}</span></div>`;
+            }).join('');
+        } catch(e) { document.getElementById('budgetList').innerHTML = '<span class="hint-text">خطا در بارگذاری</span>'; }
+    }
+    document.getElementById('setBudgetBtn').onclick = async function() {
+        const accountCode = document.getElementById('budgetAccountCode').value;
+        const amount = parseFloat(document.getElementById('budgetAmount').value);
+        const year = parseInt(document.getElementById('budgetYear').value) || 2026;
+        const month = parseInt(document.getElementById('budgetMonth').value) || 7;
+        if (!accountCode || !amount) { showToast('کد حساب و مبلغ را وارد کنید.', true); return; }
+        try {
+            const res = await fetch('/budgets/set', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ account_code: accountCode, amount, period_year: year, period_month: month })
+            });
+            const data = await res.json();
+            showToast(data.message || 'ثبت شد', !data.success);
+            if (data.success) { loadBudgetVsActual(); }
+        } catch(e) { showToast('خطا', true); }
+    };
+    document.getElementById('budgetTile').onclick = openBudgetSheet;
+    document.getElementById('closeBudgetBtn').onclick = closeBudgetSheet;
+    // دکمه ویس بودجه - باز کردن مدال ویس
+    document.getElementById('budgetVoiceBtn').addEventListener('click', () => {
+        closeBudgetSheet();
+        setTimeout(() => {
+            document.getElementById('voiceModal').classList.add('active');
+            document.getElementById('overlay').classList.add('active');
+        }, 200);
+    });
+
+    /* ===================== NEW: اسناد دوره‌ای ===================== */
+    function openRecurringSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('recurringSheet').classList.add('active');
+        loadRecurringList();
+    }
+    function closeRecurringSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('recurringSheet').classList.remove('active');
+    }
+    async function loadRecurringList() {
+        try {
+            const res = await fetch('/recurring');
+            const data = await res.json();
+            const container = document.getElementById('recList');
+            if (!data.success || !data.data || !data.data.length) {
+                container.innerHTML = '<div class="hint-text">هیچ سند دوره‌ای فعالی وجود ندارد.</div>';
+                return;
+            }
+            container.innerHTML = data.data.map(rec =>
+                `<div class="sub-detail-item">
+                    <span>${esc(rec.title)} (${esc(rec.frequency_label)}) - ${rec.amount.toLocaleString()} تومان</span>
+                    <span style="font-size:11px; color:${rec.is_active ? 'var(--income)' : 'var(--expense)'};">${rec.is_active ? '✅ فعال' : '❌ غیرفعال'}</span>
+                </div>`
+            ).join('');
+        } catch(e) { document.getElementById('recList').innerHTML = '<span class="hint-text">خطا در بارگذاری</span>'; }
+    }
+    document.getElementById('createRecBtn').onclick = async function() {
+        const title = document.getElementById('recTitle').value.trim();
+        const desc = document.getElementById('recDesc').value.trim();
+        const freq = document.getElementById('recFreq').value;
+        const amount = parseFloat(document.getElementById('recAmount').value);
+        const debit = document.getElementById('recDebit').value;
+        const credit = document.getElementById('recCredit').value;
+        if (!title || !amount) { showToast('عنوان و مبلغ را وارد کنید.', true); return; }
+        try {
+            const res = await fetch('/recurring/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, description: desc, frequency: freq, debit_code: debit, credit_code: credit, amount })
+            });
+            const data = await res.json();
+            showToast(data.message || 'ثبت شد', !data.success);
+            if (data.success) { loadRecurringList(); document.getElementById('recTitle').value = ''; document.getElementById('recDesc').value = ''; document.getElementById('recAmount').value = ''; }
+        } catch(e) { showToast('خطا', true); }
+    };
+    document.getElementById('recurringTile').onclick = openRecurringSheet;
+    document.getElementById('closeRecurringBtn').onclick = closeRecurringSheet;
+
+    /* ===================== NEW: خروجی / Export ===================== */
+    function openExportSheet() {
+        document.getElementById('overlay').classList.add('active');
+        document.getElementById('exportSheet').classList.add('active');
+    }
+    function closeExportSheet() {
+        document.getElementById('overlay').classList.remove('active');
+        document.getElementById('exportSheet').classList.remove('active');
+    }
+    function downloadFile(url, filename) {
+        window.open(url, '_blank');
+    }
+    document.getElementById('exportJournalCsvBtn').onclick = () => downloadFile('/export/journal/csv', 'journal.csv');
+    document.getElementById('exportJournalExcelBtn').onclick = () => downloadFile('/export/journal/excel', 'journal.xlsx');
+    document.getElementById('exportTrialBalanceCsvBtn').onclick = () => downloadFile('/export/trial-balance/csv', 'trial_balance.csv');
+    document.getElementById('exportCustomersCsvBtn').onclick = () => downloadFile('/export/customers/csv', 'customers.csv');
+    document.getElementById('exportVendorsCsvBtn').onclick = () => downloadFile('/export/vendors/csv', 'vendors.csv');
+    document.getElementById('exportTile').onclick = openExportSheet;
+    document.getElementById('closeExportBtn').onclick = closeExportSheet;
+
+    /* ===================== اسلایدر افقی: دکمه‌های چپ/راست ===================== */
+    (function() {
+        var track = document.getElementById('toolSliderTrack');
+        var viewport = track ? track.parentElement : null;
+        var lb = document.getElementById('sliderLeftBtn');
+        var rb = document.getElementById('sliderRightBtn');
+        if (!track || !viewport || !lb || !rb) return;
+
+        var pos = 0;
+
+        function getMax() {
+            try { return Math.max(0, track.scrollWidth - viewport.clientWidth); }
+            catch(e) { return 0; }
+        }
+
+        function updateArrows() {
+            try {
+                var mx = getMax();
+                var atStart = (pos <= 1 || mx <= 1);
+                var atEnd = (pos >= mx - 1 || mx <= 1);
+                lb.style.opacity = atStart ? '0.25' : '1';
+                lb.style.pointerEvents = atStart ? 'none' : 'auto';
+                rb.style.opacity = atEnd ? '0.25' : '1';
+                rb.style.pointerEvents = atEnd ? 'none' : 'auto';
+            } catch(e) {}
+        }
+
+        function slide(amount) {
+            try {
+                var mx = getMax();
+                pos = pos + amount;
+                pos = Math.max(0, Math.min(mx, pos));
+                track.style.transform = 'translateX(' + pos + 'px)';
+                updateArrows();
+            } catch(e) {}
+        }
+
+        rb.onclick = function() { slide(200); };
+        lb.onclick = function() { slide(-200); };
+
+        // تلاش مجدد برای به‌روزرسانی پس از بارگذاری محتوای slider توسط API
+        (function retry() {
+            if (getMax() > 0) { updateArrows(); return; }
+            setTimeout(retry, 400);
+        })();
+
+        window.addEventListener('resize', function() {
+            var mx = getMax();
+            if (pos > mx) { pos = mx; track.style.transform = 'translateX(' + pos + 'px)'; }
+            updateArrows();
+        });
+
+        // تشخیص تغییر در محتوای track با MutationObserver
+        try {
+            var obs = new MutationObserver(function(){ updateArrows(); });
+            obs.observe(track, { childList: true, subtree: true, attributes: false });
+        } catch(e) {}
+    })();
+
+    /* ===================== پشتیبانی از مینی‌اپ تلگرام و بله ===================== */
+    function getMiniApp() {
+        if (typeof window.Telegram !== 'undefined' && window.Telegram.WebApp)
+            return window.Telegram.WebApp;
+        if (typeof window.Bale !== 'undefined')
+            return window.Bale;
+        return null;
+    }
+    var ma = getMiniApp();
+    if (ma) {
+        try { ma.ready(); } catch(e) {}
+        try { ma.expand(); } catch(e) {}
+        try {
+            var backBtn = ma.BackButton;
+            if (!backBtn) backBtn = ma.backButton;
+            if (backBtn && backBtn.onClick) {
+                backBtn.onClick(closeAllSheets);
+                new MutationObserver(function() {
+                    if (isAnySheetOpen()) { try { backBtn.show(); } catch(e) {} }
+                    else { try { backBtn.hide(); } catch(e) {} }
+                }).observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: true });
+            }
+        } catch(e) {}
     }
 
     checkAuthAndInit();

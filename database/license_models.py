@@ -1,9 +1,7 @@
 # database/license_models.py
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
-
-Base = declarative_base()
+from database.models import Base
 
 class User(Base):
     __tablename__ = 'users'

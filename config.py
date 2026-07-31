@@ -17,6 +17,9 @@ FARAPAYAMAK_PASSWORD = os.getenv("FARAPAYAMAK_PASSWORD", "")
 FARAPAYAMAK_SENDER = os.getenv("FARAPAYAMAK_SENDER", "")
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 PUBLIC_APP_URL = os.getenv("PUBLIC_APP_URL", "http://localhost:8000")
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), 'accounting.db')}")
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
+JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "168"))
 
 
 def get_public_app_url() -> str:

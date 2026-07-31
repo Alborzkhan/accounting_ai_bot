@@ -1,10 +1,10 @@
 import sys, os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import re
 import secrets
 import hashlib
 import logging
+import jwt
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 from sqlalchemy.orm import sessionmaker
@@ -18,6 +18,49 @@ OTP_MAX_ATTEMPTS = 5
 OTP_RESEND_COOLDOWN_SECONDS = 60
 MOBILE_PATTERN = re.compile(r'^09\d{9}$')
 
+# ========== JWT Configuration ==========
+try:
+    from config import JWT_SECRET_KEY, JWT_EXPIRY_HOURS
+except ImportError:
+    JWT_SECRET_KEY = ""
+    JWT_EXPIRY_HOURS = 168
+
+
+def _get_jwt_secret() -> str:
+    """برمی‌گرداند JWT_SECRET_KEY، اگر خالی بود با یک مقدار پیش‌فرض اخطار می‌دهد."""
+    key = JWT_SECRET_KEY.strip()
+    if not key:
+        logger.warning("⚠️ JWT_SECRET_KEY تنظیم نشده! از کلید پیش‌فرض ناایمن استفاده می‌شود. لطفاً در .env مقداردهی کنید.")
+        key = "insecure-default-key-change-me-in-production"
+    return key
+
+
+def _get_jwt_expiry() -> timedelta:
+    return timedelta(hours=int(JWT_EXPIRY_HOURS))
+
+
+def create_jwt_token(user_id: int) -> str:
+    """ایجاد توکن JWT با user_id و تاریخ انقضا."""
+    payload = {
+        "user_id": user_id,
+        "iat": datetime.utcnow(),
+        "exp": datetime.utcnow() + _get_jwt_expiry(),
+        "type": "access",
+    }
+    return jwt.encode(payload, _get_jwt_secret(), algorithm="HS256")
+
+
+def verify_jwt_token(token: str) -> Optional[Dict]:
+    """بررسی و دیکد کردن توکن JWT. در صورت انقضا یا نامعتبر بودن None برمی‌گرداند."""
+    try:
+        return jwt.decode(token, _get_jwt_secret(), algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        logger.warning("JWT token expired")
+        return None
+    except jwt.InvalidTokenError:
+        logger.warning("Invalid JWT token")
+        return None
+
 
 class AuthManager:
     def __init__(self, db_path: str = "accounting.db") -> None:
@@ -29,6 +72,12 @@ class AuthManager:
         """تولید و ارسال کد تایید یک‌بارمصرف. اگر کاربر وجود نداشته باشد، در زمان تایید کد ثبت‌نام می‌شود."""
         if not MOBILE_PATTERN.match(mobile or ""):
             return {"success": False, "message": "شماره موبایل نامعتبر است."}
+
+        # محدودیت نرخ OTP: حداکثر ۵ درخواست در ۱۰ دقیقه به ازای هر شماره
+        from core.rate_limiter import check_rate_limit
+        if not check_rate_limit(f"otp:{mobile}", max_requests=5, window_seconds=600):
+            return {"success": False, "message": "تعداد درخواست‌های کد تایید بیش از حد مجاز است. ۱۰ دقیقه صبر کنید."}
+
         session = self.Session()
         try:
             user = session.query(User).filter(User.mobile == mobile).first()
@@ -91,12 +140,14 @@ class AuthManager:
             if name and not user.name:
                 user.name = name
 
-            token = hashlib.sha256(f"{user.id}{secrets.token_hex(16)}".encode()).hexdigest()
+            user_id = user.id
+            # ایجاد توکن JWT به جای SHA-256
+            token = create_jwt_token(user_id)
+            # ذخیره توکن در دیتابیس برای سازگاری با کدهای قدیمی (botها)
             user.auth_token = token
             user.otp_hash = None
             user.otp_expires_at = None
             user.otp_attempts = 0
-            user_id = user.id
             session.commit()
 
             try:
@@ -117,6 +168,16 @@ class AuthManager:
             session.close()
 
     def get_user_by_token(self, token: str) -> Optional[User]:
+        """بررسی توکن JWT و برگرداندن کاربر مربوطه.
+        ابتدا JWT را بررسی می‌کند، در صورت失败 به جستجوی دیتابیس (سازگاری با عقب) fallback می‌کند."""
+        payload = verify_jwt_token(token)
+        if payload and "user_id" in payload:
+            session = self.Session()
+            try:
+                return session.query(User).filter(User.id == payload["user_id"]).first()
+            finally:
+                session.close()
+        # Fallback: جستجوی مستقیم در دیتابیس برای توکن‌های قدیمی (SHA-256)
         session = self.Session()
         try:
             return session.query(User).filter(User.auth_token == token).first()
@@ -124,6 +185,11 @@ class AuthManager:
             session.close()
 
     def validate_session(self, token: str) -> Optional[int]:
+        """تأیید اعتبار توکن JWT و برگرداندن user_id. بدون کوئری دیتابیس (سریع‌تر)."""
+        payload = verify_jwt_token(token)
+        if payload and "user_id" in payload:
+            return payload["user_id"]
+        # Fallback: بررسی در دیتابیس برای توکن‌های قدیمی
         user = self.get_user_by_token(token)
         return user.id if user else None
 

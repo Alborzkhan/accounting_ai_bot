@@ -7,7 +7,6 @@ from sqlalchemy import pool
 
 from alembic import context
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

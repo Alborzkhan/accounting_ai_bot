@@ -111,7 +111,7 @@ class PaymentGateway:
                 # صدور لایسنس
                 from core.license_manager import LicenseManager
                 lm = LicenseManager()
-                license_result = lm.confirm_transaction(transaction.id, transaction.plan_type)
+                license_result = lm.confirm_transaction(transaction.id, ref_id)
                 
                 if license_result["success"]:
                     return {

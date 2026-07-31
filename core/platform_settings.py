@@ -1,7 +1,4 @@
 # core/platform_settings.py
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import Dict, Optional
 from sqlalchemy.orm import sessionmaker

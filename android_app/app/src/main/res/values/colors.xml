@@ -3,4 +3,6 @@
     <color name="narin_primary">#1f9d6e</color>
     <color name="narin_primary_dark">#157a54</color>
     <color name="narin_background">#f5f7f6</color>
+    <color name="ic_launcher_background">#1f9d6e</color>
+    <color name="splash_background">#11213a</color>
 </resources>

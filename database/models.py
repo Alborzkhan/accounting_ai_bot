@@ -249,8 +249,9 @@ def _drop_unique_constraint_on_invoice_number(engine, table_name):
 
 
 def init_db(db_path="accounting.db"):
-    """ایجاد دیتابیس و جداول"""
-    engine = create_engine(f'sqlite:///{db_path}', echo=False)
+    """ایجاد دیتابیس و جداول - از PostgreSQL یا SQLite پشتیبانی می‌کند."""
+    database_url = os.getenv("DATABASE_URL", f"sqlite:///{db_path}")
+    engine = create_engine(database_url, echo=False)
     Base.metadata.create_all(engine)
     _drop_unique_constraint_on_invoice_number(engine, "proforma_invoices")
     _drop_unique_constraint_on_invoice_number(engine, "purchase_invoices")

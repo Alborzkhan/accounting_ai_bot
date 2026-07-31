@@ -1,7 +1,6 @@
-import sys
 import os
 import re
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import re
 
 from core.logging_config import setup_logging
 setup_logging()
@@ -20,19 +19,13 @@ from core.notifications import NotificationService
 from core.license_manager import LicenseManager
 from ai_handlers.llm_processor import LLMProcessor
 from config import TELEGRAM_TOKEN, get_public_app_url
+from bot_handlers.base_bot import BaseBot
 
 BOT_NAME = "نارین"
 
-class TelegramBot:
+class TelegramBot(BaseBot):
     def __init__(self) -> None:
-        self.engine = AccountingEngine()
-        self.text_handler = TextCommandHandler(self.engine)
-        self.dialog = SmartDialogEngine(self.engine)
-        self.voice_handler = VoiceToAccounting(model_size="base")
-        self.auth_manager = AuthManager()
-        self.notifier = NotificationService()
-        self.license_manager = LicenseManager()
-        self.llm = LLMProcessor()
+        super().__init__()
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         telegram_id = str(update.effective_user.id)
@@ -230,18 +223,33 @@ class TelegramBot:
                 )
                 return
 
+            msg_type = "پیش‌فاکتور" if invoice_type == "proforma" else "فاکتور"
+
+            if invoice_type == "proforma":
+                await update.message.reply_text(
+                    f"📋 پیش‌فاکتور برای {customer} ثبت شد.\n"
+                    f"💰 مبلغ: {amount:,} تومان\n"
+                    f"📝 شرح: {description[:100]}\n\n"
+                    "💡 پیش‌فاکتور در سیستم ثبت شد. برای تبدیل به فاکتور و ثبت سند حسابداری، "
+                    "از دستور «فاکتور میخوام» استفاده کن."
+                )
+                return
+
+            lic = self.license_manager.can_create_voucher(user_id)
+            if not lic.get("allowed", True):
+                await update.message.reply_text(f"❌ {lic.get('message', 'محدودیت مجوز')}")
+                return
+
             entry_id = self.engine.create_voucher(
                 date=datetime.now(),
-                description=f"{'پیش‌فاکتور' if invoice_type == 'proforma' else 'فاکتور'} برای {customer}: {description}",
+                description=f"فاکتور برای {customer}: {description}",
                 lines=[
                     ("1201", amount, 'debit'),
                     ("4001", amount, 'credit')
-                ],
-                user_id=user_id
+                ]
             )
-            msg_type = "پیش‌فاکتور" if invoice_type == "proforma" else "فاکتور"
             await update.message.reply_text(
-                f"✅ {msg_type} برای {customer} ثبت شد.\n"
+                f"✅ فاکتور برای {customer} ثبت شد.\n"
                 f"📋 شماره سند: {entry_id}\n"
                 f"💰 مبلغ: {amount:,} تومان\n"
                 f"📝 شرح: {description[:100]}"
@@ -422,14 +430,17 @@ class TelegramBot:
                     "یا: مبلغ ۵۰۰۰۰۰ تومان"
                 )
                 return
+            lic = self.license_manager.can_create_voucher(user_id)
+            if not lic.get("allowed", True):
+                await update.message.reply_text(f"❌ {lic.get('message', 'محدودیت مجوز')}")
+                return
             entry_id = self.engine.create_voucher(
                 date=datetime.now(),
                 description=result["description"],
                 lines=[
                     (result["debit_account"], amount, 'debit'),
                     (result["credit_account"], amount, 'credit')
-                ],
-                user_id=user_id
+                ]
             )
             await update.message.reply_text(
                 f"✅ سند شماره {entry_id} ثبت شد.\n"
@@ -501,19 +512,23 @@ class TelegramBot:
 
             data, transcript = await asyncio.to_thread(self.voice_handler.voice_to_voucher, file_path)
 
-            if data["type"] and data["amount"] > 0:
+            amount = data.get("amount", 0)
+            if data["type"] and amount >= 1000:
+                lic = self.license_manager.can_create_voucher(user_id)
+                if not lic.get("allowed", True):
+                    await update.message.reply_text(f"❌ {lic.get('message', 'محدودیت مجوز')}")
+                    return
                 entry_id = self.engine.create_voucher(
                     date=datetime.now(),
                     description=data["description"],
                     lines=[
-                        (data["debit_account"], data["amount"], 'debit'),
-                        (data["credit_account"], data["amount"], 'credit')
-                    ],
-                    user_id=user_id
+                        (data["debit_account"], amount, 'debit'),
+                        (data["credit_account"], amount, 'credit')
+                    ]
                 )
                 await update.message.reply_text(
                     f"✅ سند شماره {entry_id} ثبت شد.\n\n"
-                    f"💰 مبلغ: {data['amount']:,} تومان\n"
+                    f"💰 مبلغ: {amount:,} تومان\n"
                     f"📝 شرح: {data['description'][:100]}\n"
                     f"📊 بدهکار: {self.get_account_name(data['debit_account'])}\n"
                     f"📊 بستانکار: {self.get_account_name(data['credit_account'])}"

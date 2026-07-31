@@ -1,7 +1,4 @@
 # core/license_manager.py
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import datetime, timedelta
 from sqlalchemy.orm import sessionmaker
@@ -84,6 +81,8 @@ class LicenseManager:
                 return {"is_valid": False, "message": "لایسنس فعالی یافت نشد."}
             
             today = datetime.now()
+            if license.end_date is None:
+                return {"is_valid": False, "message": "لایسنس نامعتبر است (تاریخ پایان ندارد)."}
             days_left = (license.end_date - today).days
             
             if days_left < 0:

@@ -3,8 +3,11 @@ package com.narin.app
 import android.Manifest
 import android.app.DownloadManager
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -16,15 +19,17 @@ import android.webkit.URLUtil
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 
@@ -34,11 +39,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var errorLayout: LinearLayout
     private lateinit var errorText: TextView
+    private lateinit var progressBar: ProgressBar
 
     private var pendingPermissionRequest: PermissionRequest? = null
     private var filePathCallback: android.webkit.ValueCallback<Array<Uri>>? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
-    private val baseUrl: String get() = getString(R.string.app_base_url)
+    private val baseUrl: String get() = BuildConfig.APP_BASE_URL
 
     private val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -52,6 +59,11 @@ class MainActivity : AppCompatActivity() {
         }
         pendingPermissionRequest = null
     }
+
+    // درخواست مجوز اعلان (اندروید ۱۳+)
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* اعلان‌های وب داخل WebView مدیریت می‌شوند */ }
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -74,9 +86,12 @@ class MainActivity : AppCompatActivity() {
         swipeRefresh = findViewById(R.id.swipeRefresh)
         errorLayout = findViewById(R.id.errorLayout)
         errorText = findViewById(R.id.errorText)
+        progressBar = findViewById(R.id.progressBar)
         val retryButton = findViewById<Button>(R.id.retryButton)
 
         setupWebView()
+        setupBackPress()
+        registerNetworkMonitor()
 
         retryButton.setOnClickListener { loadApp() }
         swipeRefresh.setOnRefreshListener {
@@ -84,6 +99,7 @@ class MainActivity : AppCompatActivity() {
             swipeRefresh.isRefreshing = false
         }
 
+        requestInitialPermissions()
         loadApp()
     }
 
@@ -103,12 +119,19 @@ class MainActivity : AppCompatActivity() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                // همه چیز داخل همین WebView باز شود؛ دامنه‌ی خود سرور است.
+                // همه‌چیز داخل همین WebView باز شود؛ دامنه‌ی خود سرور است.
                 return false
+            }
+
+            override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                progressBar.visibility = View.VISIBLE
+                errorLayout.visibility = View.GONE
             }
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
+                progressBar.visibility = View.GONE
                 errorLayout.visibility = View.GONE
                 webView.visibility = View.VISIBLE
             }
@@ -123,9 +146,25 @@ class MainActivity : AppCompatActivity() {
                     showError()
                 }
             }
+
+            override fun onReceivedHttpError(
+                view: WebView,
+                request: WebResourceRequest,
+                errorResponse: WebResourceResponse
+            ) {
+                super.onReceivedHttpError(view, request, errorResponse)
+                if (request.isForMainFrame) {
+                    showError()
+                }
+            }
         }
 
         webView.webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView, newProgress: Int) {
+                super.onProgressChanged(view, newProgress)
+                progressBar.progress = newProgress
+            }
+
             override fun onPermissionRequest(request: PermissionRequest) {
                 val needsAudio = request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
                 if (!needsAudio) {
@@ -182,26 +221,74 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadApp() {
-        if (!ensureMicPermissionAsked()) {
-            webView.loadUrl(baseUrl)
+        errorLayout.visibility = View.GONE
+        webView.visibility = View.VISIBLE
+        webView.loadUrl(baseUrl)
+    }
+
+    private fun setupBackPress() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (webView.canGoBack()) {
+                    webView.goBack()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
+    }
+
+    private fun registerNetworkMonitor() {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                runOnUiThread {
+                    // اگر خطا داشتیم و اینترنت برگشت، خودکار دوباره بارگذاری کن
+                    if (webView.url.isNullOrEmpty() && errorLayout.visibility == View.VISIBLE) {
+                        loadApp()
+                    }
+                }
+            }
+        }
+        cm.registerNetworkCallback(request, networkCallback!!)
+    }
+
+    private fun requestInitialPermissions() {
+        // میکروفون برای فرمان صوتی
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+        // اعلان‌ها در اندروید ۱۳+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
     }
 
-    private fun ensureMicPermissionAsked(): Boolean {
-        // فقط بار اول از کاربر می‌خواهیم تا تجربه‌ی اول گیج‌کننده نباشد؛ بعد از آن طبق نیاز صفحه پرسیده می‌شود.
-        return false
-    }
-
     private fun showError() {
+        progressBar.visibility = View.GONE
         webView.visibility = View.GONE
         errorLayout.visibility = View.VISIBLE
     }
 
-    override fun onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
+    override fun onDestroy() {
+        super.onDestroy()
+        networkCallback?.let {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            try {
+                cm.unregisterNetworkCallback(it)
+            } catch (e: Exception) {
+                // نادیده بگیر
+            }
         }
     }
 }

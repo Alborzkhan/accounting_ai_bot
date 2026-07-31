@@ -1,7 +1,4 @@
 # core/inventory_reconciler.py
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import Dict, List
 from sqlalchemy import func

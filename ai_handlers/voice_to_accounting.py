@@ -45,22 +45,36 @@ class VoiceToAccounting:
         word_to_number = {
             'یک': 1, 'دو': 2, 'سه': 3, 'چهار': 4, 'پنج': 5, 'پنچه': 5,
             'شش': 6, 'هفت': 7, 'هشت': 8, 'نه': 9, 'ده': 10,
+            'یازده': 11, 'دوازده': 12, 'سیزده': 13, 'چهارده': 14, 'پانزده': 15,
+            'شانزده': 16, 'هفده': 17, 'هجده': 18, 'نوزده': 19,
             'بیست': 20, 'سی': 30, 'چهل': 40, 'پنجاه': 50,
             'شصت': 60, 'هفتاد': 70, 'هشتاد': 80, 'نود': 90,
             'صد': 100, 'دویست': 200, 'سیصد': 300, 'چهارصد': 400,
             'پانصد': 500, 'ششصد': 600, 'هفتصد': 700, 'هشتصد': 800,
-            'نهصد': 900, 'هزار': 1000
+            'نهصد': 900, 'هزار': 1000, 'میلیون': 1_000_000, 'میلیارد': 1_000_000_000,
         }
         
         words = text.split()
-        for i, word in enumerate(words):
+        total = 0
+        current = 0
+        for word in words:
             if word in word_to_number:
                 num = word_to_number[word]
-                if i + 1 < len(words) and words[i + 1] == 'هزار':
-                    return num * 1000
-                if len(words) == 1:
-                    return num
-                return num
+                if num >= 1000:
+                    total += (current or 1) * num
+                    current = 0
+                elif num >= 100:
+                    current *= num
+                else:
+                    current += num
+            elif word == 'و':
+                continue
+            else:
+                total += current
+                current = 0
+        total += current
+        if total > 0:
+            return total
         
         # الگوهای عددی
         patterns = [

@@ -1,7 +1,4 @@
 # core/text_command_handler.py
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import re
 from datetime import datetime
@@ -14,10 +11,15 @@ class TextCommandHandler:
         self.engine = engine
         self.categorizer = AutoCategorizer()
     
-    def parse_and_create_voucher(self, text: str, user_id: Optional[int] = None) -> Dict:
+    def parse_and_create_voucher(self, text: str, user_id: Optional[int] = None,
+                                  income_account: str = "4001",
+                                  expense_account: str = "5601") -> Dict:
         """
         تبدیل متن ساده به سند حسابداری و ثبت آن
         مثال: "خرید 100 عدد خودکار از احمدی 5000 تومان"
+
+        income_account: کد حساب درآمدی پیش‌فرض (مثلاً 4001 فروش کالا، 4301 خدمات، 4601 سایر)
+        expense_account: کد حساب هزینه‌ای پیش‌فرض (مثلاً 5601 حقوق، 5602 اجاره)
         """
         result = {
             "success": False,
@@ -31,10 +33,11 @@ class TextCommandHandler:
             result["data"]["type"] = "خرید"
             result["data"]["debit_account"] = "1201"  # موجودی کالا
             result["data"]["credit_account"] = "2001"  # بستانکاران تجاری
-        elif "فروش" in text:
+        elif "فروش" in text or "کمیسیون" in text:
             result["data"]["type"] = "فروش"
             result["data"]["debit_account"] = "1101"  # بدهکاران تجاری
-            result["data"]["credit_account"] = "4001"  # فروش کالا
+            # از حساب درآمدی انتخابی کاربر استفاده کن
+            result["data"]["credit_account"] = income_account
         elif "پرداخت" in text:
             result["data"]["type"] = "پرداخت"
             result["data"]["debit_account"] = "2001"  # بستانکاران تجاری
@@ -43,9 +46,13 @@ class TextCommandHandler:
             result["data"]["type"] = "دریافت"
             result["data"]["debit_account"] = "1001"  # صندوق
             result["data"]["credit_account"] = "1101"  # بدهکاران تجاری
+        elif any(k in text for k in ["اجاره", "حقوق", "حمل", "تعمیر", "کارمزد", "بیمه", "تبلیغات", "مالیات", "آب", "برق", "گاز", "تلفن", "اینترنت"]):
+            result["data"]["type"] = "هزینه"
+            result["data"]["debit_account"] = expense_account
+            result["data"]["credit_account"] = "1001"  # صندوق
         else:
             result["success"] = False
-            result["message"] = "نوع عملیات تشخیص داده نشد (خرید/فروش/پرداخت/دریافت)"
+            result["message"] = "نوع عملیات تشخیص داده نشد (خرید/فروش/پرداخت/دریافت/هزینه)"
             return result
         
         # استخراج مبلغ — فقط اگه کلمه‌ای مرتبط با قیمت توی متن باشه
@@ -56,18 +63,28 @@ class TextCommandHandler:
             return result
 
         numbers = re.findall(r'\d+', text)
-        if numbers:
-            result["data"]["amount"] = int(numbers[-1])
-            if "هزار" in text and "میلیون" not in text:
-                result["data"]["amount"] *= 1000
-            elif "میلیون" in text:
-                result["data"]["amount"] *= 1_000_000
-            elif "میلیارد" in text:
-                result["data"]["amount"] *= 1_000_000_000
-        else:
+        if not numbers:
             result["success"] = False
             result["message"] = "مبلغ تشخیص داده نشد. مثال: ۵۰۰۰ تومان"
             return result
+
+        # عددی که نزدیک‌ترین به 'تومان' یا 'ریال' هست رو انتخاب کن
+        price_pos = text.find("تومان")
+        if price_pos == -1:
+            price_pos = text.find("ریال")
+        amount = int(numbers[-1])
+        if price_pos > 0:
+            for n in numbers:
+                npos = text.find(n)
+                if npos != -1 and npos < price_pos:
+                    amount = int(n)
+        result["data"]["amount"] = amount
+        if "میلیارد" in text:
+            result["data"]["amount"] *= 1_000_000_000
+        elif "میلیون" in text:
+            result["data"]["amount"] *= 1_000_000
+        elif "هزار" in text:
+            result["data"]["amount"] *= 1000
         
         # اعتبارسنجی مبلغ (مقادیر خیلی کم احتمالاً خطای تشخیص هستند)
         if result["data"]["amount"] <= 1000:

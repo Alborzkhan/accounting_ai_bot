@@ -3,12 +3,14 @@
 
 # Database
 *.db
+*.sqlite3
 
 # Python
 __pycache__/
 *.pyc
 venv/
 *.egg-info/
+.pytest_cache/
 
 # IDE
 .idea/
@@ -17,10 +19,12 @@ venv/
 # Uploads
 voice_temp/
 voice_files/
+static/invoices/
 
 # Logs
 logs/
 *.log
+*.out
 
 # Claude Code internal state
 .claude/
@@ -36,3 +40,7 @@ Thumbs.db
 cloudflared.exe
 bore.exe
 bore.zip
+
+# Temporary / test artifacts
+import_check.txt
+pytest_out.txt

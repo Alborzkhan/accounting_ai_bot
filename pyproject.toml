@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "narin-accounting"
+version = "1.0.0"
+description = "نارین - حسابدار هوشمند شخصی شما"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Proprietary"}
+authors = [
+    {name = "Narin Team"},
+]
+
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",
+    "sqlalchemy>=2.0",
+    "jdatetime>=5.0",
+    "python-telegram-bot>=20.0",
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+    "openai-whisper>=20231117",
+    "reportlab>=4.0",
+    "arabic-reshaper>=3.0",
+    "python-bidi>=0.6",
+    "matplotlib>=3.8",
+    "pandas>=2.0",
+    "python-barcode>=0.15",
+    "alembic>=1.13",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.3",
+    "mypy>=1.8",
+]
+postgres = [
+    "psycopg2-binary>=2.9",
+]
+export = [
+    "openpyxl>=3.1",
+]
+schedule = [
+    "APScheduler>=3.10",
+]
+
+[tool.setuptools]
+packages = {find = {where = [".", "core", "database", "bot_handlers", "ai_handlers", "web_app", "reports"]}}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true

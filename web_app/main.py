@@ -1,8 +1,6 @@
 # web_app/main.py
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import os
 import asyncio
 import html
 import json
@@ -34,6 +32,12 @@ from core.platform_settings import PlatformSettingsManager
 from core.building_manager import BuildingManager
 from core.sms_service import test_sms_connection
 from core.ai_voucher_fallback import try_ai_voucher
+from core.dashboard_service import DashboardService
+from core.financial_reports import FinancialReports
+from core.budget_manager import BudgetManager
+from core.recurring_service import RecurringVoucherService
+from core.audit import AuditService
+from core.data_export import DataExporter
 from reports.invoice_pdf import InvoicePDF
 from ai_handlers.voice_to_accounting import VoiceToAccounting
 from ai_handlers.llm_processor import LLMProcessor, SUPPORTED_PROVIDERS
@@ -51,8 +55,58 @@ if ALLOWED_ORIGINS:
         allow_headers=["*"],
     )
 
+
+# ========== HEALTH CHECK ==========
+
+@app.get("/favicon.ico")
+async def favicon() -> FileResponse:
+    from fastapi.responses import FileResponse as FR
+    path = os.path.join("static", "favicon.ico")
+    if os.path.exists(path):
+        return FR(path)
+    return Response(status_code=204)
+
+
+@app.get("/health")
+async def health_check() -> dict:
+    """بررسی سلامت سرویس و اتصال به دیتابیس."""
+    import time
+    start = time.time()
+    services = {}
+    all_ok = True
+
+    # بررسی دیتابیس
+    try:
+        from database.models import Account
+        session = engine.Session()
+        session.query(Account).first()
+        session.close()
+        services["database"] = "ok"
+    except Exception as e:
+        services["database"] = f"error: {e}"
+        all_ok = False
+
+    services["uptime_seconds"] = round(time.time() - start, 2)
+    status_code = 200 if all_ok else 503
+    return JSONResponse(
+        content={"status": "ok" if all_ok else "degraded", "services": services},
+        status_code=status_code,
+    )
+
+
 # ========== MOUNT STATIC FILES ==========
 os.makedirs("static", exist_ok=True)
+
+# ایجاد favicon placeholder
+favicon_path = os.path.join("static", "favicon.ico")
+if not os.path.exists(favicon_path):
+    try:
+        with open(favicon_path, "wb") as f:
+            # یک favicon ساده (ICO خالی)
+            f.write(b'\x00\x00\x01\x00\x01\x00\x10\x10\x00\x00\x01\x00\x20\x00\x68\x04\x00\x00\x16\x00\x00\x00')
+    except Exception:
+        pass
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ایجاد پوشه‌ها
@@ -74,6 +128,12 @@ building_manager = BuildingManager()
 invoice_pdf_maker = InvoicePDF()
 llm_processor = LLMProcessor()
 voice_handler = VoiceToAccounting(model_size="base")
+dashboard_service = DashboardService()
+financial_reports = FinancialReports()
+budget_manager = BudgetManager()
+recurring_voucher_service = RecurringVoucherService()
+audit_service = AuditService()
+data_exporter = DataExporter()
 ALLOWED_BUSINESS_TYPES = {"بازرگانی", "تولیدی", "خدماتی", "پیمانکاری", "مدیریت آپارتمان‌ها"}
 
 
@@ -142,7 +202,9 @@ async def home() -> HTMLResponse:
 
 # ثبت سند متنی
 @app.post("/create_voucher")
-async def create_voucher(request: Request, description: str = Form(...)) -> dict:
+async def create_voucher(request: Request, description: str = Form(...),
+                          income_account: Optional[str] = Form("4001"),
+                          expense_account: Optional[str] = Form("5601")) -> dict:
     user_id = get_user_id(request)
     if not user_id:
         return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
@@ -153,7 +215,9 @@ async def create_voucher(request: Request, description: str = Form(...)) -> dict
     if not license_status["allowed"]:
         return {"success": False, "message": license_status["message"]}
     try:
-        result = text_handler.parse_and_create_voucher(description, user_id=user_id)
+        result = text_handler.parse_and_create_voucher(description, user_id=user_id,
+                                                        income_account=income_account,
+                                                        expense_account=expense_account)
         if not result["success"]:
             ai_result = try_ai_voucher(engine, description, user_id)
             if ai_result.get("success"):
@@ -608,6 +672,254 @@ async def product_statement(request: Request, product_name: str) -> dict:
         }
     finally:
         session.close()
+
+
+# ========== NEW FEATURES: DASHBOARD, REPORTS, BUDGET, RECURRING, AUDIT, EXPORT ==========
+
+@app.get("/dashboard/kpi")
+async def dashboard_kpi(request: Request) -> dict:
+    """KPI summary برای کارت بالای داشبورد."""
+    user_id = get_user_id(request)
+    if not user_id:
+        return {}
+    return dashboard_service.get_kpi_summary(user_id)
+
+@app.get("/dashboard/monthly")
+async def dashboard_monthly(request: Request, months: int = 12) -> dict:
+    """داده‌های ماهانه درآمد/هزینه/سود برای نمودار خطی."""
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"labels": [], "income": [], "expense": [], "profit": []}
+    return dashboard_service.get_monthly_income_expense(user_id, months)
+
+@app.get("/dashboard/expenses")
+async def dashboard_expenses(request: Request, months: int = 3) -> dict:
+    """توزیع هزینه‌ها برای نمودار دایره‌ای."""
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"data": []}
+    data = dashboard_service.get_expense_breakdown(user_id, months)
+    return {"data": data}
+
+@app.get("/dashboard/cashflow")
+async def dashboard_cashflow(request: Request, days: int = 30) -> dict:
+    """گردش نقدی روزانه."""
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"labels": [], "inflow": [], "outflow": [], "balance": []}
+    return dashboard_service.get_cashflow(user_id, days)
+
+@app.get("/dashboard/top-customers")
+async def dashboard_top_customers(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"data": []}
+    return {"data": dashboard_service.get_top_customers(user_id)}
+
+@app.get("/dashboard/top-vendors")
+async def dashboard_top_vendors(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"data": []}
+    return {"data": dashboard_service.get_top_vendors(user_id)}
+
+# ---- گزارش‌های مالی ----
+@app.get("/reports/profit-loss")
+async def report_profit_loss(request: Request, date_from: str = "", date_to: str = "") -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    df = _parse_report_date(date_from)
+    dt = _parse_report_date(date_to, end_of_day=True)
+    result = financial_reports.profit_loss(user_id, df, dt)
+    return {"success": True, "data": result}
+
+@app.get("/reports/balance-sheet")
+async def report_balance_sheet(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    result = financial_reports.balance_sheet(user_id)
+    return {"success": True, "data": result}
+
+@app.get("/reports/account-statement")
+async def report_account_statement(request: Request, code: str,
+                                    date_from: str = "", date_to: str = "") -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    df = _parse_report_date(date_from)
+    dt = _parse_report_date(date_to, end_of_day=True)
+    return financial_reports.account_statement(user_id, code, df, dt)
+
+@app.get("/reports/vat")
+async def report_vat(request: Request, date_from: str = "", date_to: str = "") -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    df = _parse_report_date(date_from)
+    dt = _parse_report_date(date_to, end_of_day=True)
+    result = financial_reports.vat_report(user_id, df, dt)
+    return {"success": True, "data": result}
+
+# ---- بودجه ----
+@app.get("/budgets")
+async def get_budgets(request: Request, year: int = 0, month: int = 0) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "data": []}
+    from datetime import datetime as dt
+    y = year or dt.now().year
+    m = month or dt.now().month
+    data = budget_manager.get_budgets(user_id, y, m)
+    return {"success": True, "data": data}
+
+@app.post("/budgets/set")
+async def set_budget(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    p = await request.json()
+    return budget_manager.set_budget(
+        user_id=user_id,
+        account_code=p.get("account_code", ""),
+        amount=float(p.get("amount", 0)),
+        budget_type=p.get("budget_type", "monthly"),
+        period_year=p.get("period_year"),
+        period_month=p.get("period_month"),
+        note=p.get("note", ""),
+    )
+
+@app.get("/budgets/vs-actual")
+async def budget_vs_actual(request: Request, year: int = 0, month: int = 0) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "data": []}
+    from datetime import datetime as dt
+    y = year or dt.now().year
+    m = month or dt.now().month
+    data = budget_manager.get_budget_vs_actual(user_id, y, m)
+    return {"success": True, "data": data}
+
+@app.get("/budgets/alerts")
+async def budget_alerts(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "data": []}
+    data = budget_manager.get_alerts(user_id)
+    return {"success": True, "data": data}
+
+# ---- اسناد دوره‌ای ----
+@app.get("/recurring")
+async def get_recurring(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "data": []}
+    data = recurring_voucher_service.get_all(user_id)
+    return {"success": True, "data": data}
+
+@app.post("/recurring/create")
+async def create_recurring(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    p = await request.json()
+    return recurring_voucher_service.create(
+        user_id=user_id,
+        title=p.get("title", ""),
+        description=p.get("description", ""),
+        frequency=p.get("frequency", "monthly"),
+        debit_code=p.get("debit_code", ""),
+        credit_code=p.get("credit_code", ""),
+        amount=float(p.get("amount", 0)),
+        next_run=p.get("next_run"),
+        end_date=p.get("end_date"),
+    )
+
+@app.post("/recurring/{rec_id}/toggle")
+async def toggle_recurring(request: Request, rec_id: int) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    return recurring_voucher_service.toggle_active(rec_id, user_id)
+
+@app.post("/recurring/{rec_id}/delete")
+async def delete_recurring(request: Request, rec_id: int) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    return recurring_voucher_service.delete(rec_id, user_id)
+
+# ---- خروجی Excel/CSV ----
+@app.get("/export/journal/csv")
+async def export_journal_csv(request: Request, date_from: str = "", date_to: str = "") -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    df = _parse_report_date(date_from)
+    dt = _parse_report_date(date_to, end_of_day=True)
+    csv_content = data_exporter.export_journal_csv(user_id, df, dt)
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        content=csv_content,
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": "attachment; filename=journal_entries.csv"},
+    )
+
+@app.get("/export/journal/excel")
+async def export_journal_excel(request: Request, date_from: str = "", date_to: str = "") -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    df = _parse_report_date(date_from)
+    dt = _parse_report_date(date_to, end_of_day=True)
+    excel_bytes = data_exporter.export_journal_excel(user_id, df, dt)
+    from fastapi.responses import StreamingResponse
+    import io
+    return StreamingResponse(
+        io.BytesIO(excel_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=journal_entries.xlsx"},
+    )
+
+@app.get("/export/customers/csv")
+async def export_customers_csv(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    csv_content = data_exporter.export_customers_csv(user_id)
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        content=csv_content,
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": "attachment; filename=customers.csv"},
+    )
+
+@app.get("/export/vendors/csv")
+async def export_vendors_csv(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    csv_content = data_exporter.export_vendors_csv(user_id)
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        content=csv_content,
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": "attachment; filename=vendors.csv"},
+    )
+
+@app.get("/export/trial-balance/csv")
+async def export_trial_balance_csv(request: Request) -> dict:
+    user_id = get_user_id(request)
+    if not user_id:
+        return {"success": False, "message": "لطفاً وارد حساب خود شوید."}
+    csv_content = data_exporter.export_trial_balance_csv(user_id)
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        content=csv_content,
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": "attachment; filename=trial_balance.csv"},
+    )
 
 
 # تحلیل هوشمند یک حساب

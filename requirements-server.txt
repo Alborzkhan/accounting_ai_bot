@@ -1,0 +1,17 @@
+# ===== PythonAnywhere / Server Deployment =====
+# نسخه سبک‌تر بدون Whisper (مدل صوتی) - برای سرور
+
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+sqlalchemy>=2.0.0
+python-dotenv>=1.0.0
+pyjwt>=2.8.0
+requests>=2.31.0
+openpyxl>=3.1.0
+apscheduler>=3.10.0
+psycopg2-binary>=2.9.0
+redis>=5.0.0
+python-multipart>=0.0.6
+aiofiles>=23.0.0
+httpx>=0.25.0
+jinja2>=3.1.0
