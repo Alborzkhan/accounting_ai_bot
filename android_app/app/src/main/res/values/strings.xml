@@ -6,7 +6,7 @@
         آدرس سرور نارین. هر بار که تونل تست عوض می‌شود، این مقدار را به‌روز کنید و دوباره Build کنید.
         وقتی پروژه روی یک دامنه‌ی واقعی و ثابت مستقر شد، این مقدار فقط یک‌بار برای همیشه تنظیم می‌شود.
     -->
-    <string name="app_base_url">https://762c2864f5b1f802-188-229-81-173.serveousercontent.com/app</string>
+    <string name="app_base_url">http://192.168.43.213:8000/app</string>
 
     <string name="no_connection_message">اتصال به سرور برقرار نشد. اینترنت یا آدرس سرور را بررسی کنید.</string>
     <string name="retry">تلاش دوباره</string>
