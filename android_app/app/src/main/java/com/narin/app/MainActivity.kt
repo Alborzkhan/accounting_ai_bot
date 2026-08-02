@@ -1,6 +1,7 @@
 package com.narin.app
 
 import android.Manifest
+import android.app.Activity
 import android.app.DownloadManager
 import android.content.Context
 import android.content.pm.PackageManager
@@ -14,12 +15,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.view.View
 import android.webkit.CookieManager
-import android.webkit.PermissionRequest
 import android.webkit.URLUtil
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -27,268 +23,156 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import androidx.activity.OnBackPressedCallback
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 
-class MainActivity : AppCompatActivity() {
+/**
+ * نسخه‌ی ساده و مطمئن: یک Activity ساده (بدون AppCompat) که فقط یک WebView را باز می‌کند.
+ * تمام کد در try/catch است تا به‌جای crash، خطا روی صفحه نشان داده شود.
+ */
+class MainActivity : Activity() {
 
-    private lateinit var webView: WebView
-    private lateinit var swipeRefresh: SwipeRefreshLayout
-    private lateinit var errorLayout: LinearLayout
-    private lateinit var errorText: TextView
-    private lateinit var progressBar: ProgressBar
-
-    private var pendingPermissionRequest: PermissionRequest? = null
-    private var filePathCallback: android.webkit.ValueCallback<Array<Uri>>? = null
+    private var webView: WebView? = null
+    private var progressBar: ProgressBar? = null
+    private var errorLayout: LinearLayout? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private val baseUrl: String get() = BuildConfig.APP_BASE_URL
 
-    private val micPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        pendingPermissionRequest?.let { req ->
-            if (granted) {
-                req.grant(req.resources)
-            } else {
-                req.deny()
-            }
-        }
-        pendingPermissionRequest = null
-    }
-
-    // درخواست مجوز اعلان (اندروید ۱۳+)
-    private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { /* اعلان‌های وب داخل WebView مدیریت می‌شوند */ }
-
-    private val fileChooserLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val data = result.data
-        val uris: Array<Uri>? = if (result.resultCode == RESULT_OK && data?.data != null) {
-            arrayOf(data.data!!)
-        } else {
-            null
-        }
-        filePathCallback?.onReceiveValue(uris)
-        filePathCallback = null
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        try {
+            setContentView(R.layout.activity_main)
+            webView = findViewById(R.id.webView)
+            progressBar = findViewById(R.id.progressBar)
+            errorLayout = findViewById(R.id.errorLayout)
+            val retryButton = findViewById<Button>(R.id.retryButton)
 
-        webView = findViewById(R.id.webView)
-        swipeRefresh = findViewById(R.id.swipeRefresh)
-        errorLayout = findViewById(R.id.errorLayout)
-        errorText = findViewById(R.id.errorText)
-        progressBar = findViewById(R.id.progressBar)
-        val retryButton = findViewById<Button>(R.id.retryButton)
+            setupWebView()
+            registerNetworkMonitor()
 
-        setupWebView()
-        setupBackPress()
-        registerNetworkMonitor()
-
-        retryButton.setOnClickListener { loadApp() }
-        swipeRefresh.setOnRefreshListener {
-            webView.reload()
-            swipeRefresh.isRefreshing = false
+            retryButton.setOnClickListener { loadApp() }
+            requestPermissionsCompat()
+            loadApp()
+        } catch (e: Throwable) {
+            showFatalError("خطا در راه‌اندازی: ${e.javaClass.name}: ${e.message}")
         }
-
-        requestInitialPermissions()
-        loadApp()
     }
 
     private fun setupWebView() {
-        val settings: WebSettings = webView.settings
+        val wv = webView ?: return
+        val settings: WebSettings = wv.settings
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.databaseEnabled = true
         settings.mediaPlaybackRequiresUserGesture = false
-        settings.cacheMode = WebSettings.LOAD_DEFAULT
-        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         settings.setSupportZoom(false)
-        settings.userAgentString = settings.userAgentString + " NarinAndroidApp"
 
         CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
-        webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                // همه‌چیز داخل همین WebView باز شود؛ دامنه‌ی خود سرور است.
-                return false
+        wv.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                progressBar?.visibility = View.VISIBLE
+                errorLayout?.visibility = View.GONE
             }
-
-            override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
-                super.onPageStarted(view, url, favicon)
-                progressBar.visibility = View.VISIBLE
-                errorLayout.visibility = View.GONE
+            override fun onPageFinished(view: WebView, url: String?) {
+                progressBar?.visibility = View.GONE
+                errorLayout?.visibility = View.GONE
             }
-
-            override fun onPageFinished(view: WebView, url: String) {
-                super.onPageFinished(view, url)
-                progressBar.visibility = View.GONE
-                errorLayout.visibility = View.GONE
-                webView.visibility = View.VISIBLE
-            }
-
+            @Deprecated("Deprecated in Java")
             override fun onReceivedError(
                 view: WebView,
-                request: WebResourceRequest,
-                error: WebResourceError
+                errorCode: Int,
+                description: String,
+                failingUrl: String
             ) {
-                super.onReceivedError(view, request, error)
-                if (request.isForMainFrame) {
-                    showError()
-                }
-            }
-
-            override fun onReceivedHttpError(
-                view: WebView,
-                request: WebResourceRequest,
-                errorResponse: WebResourceResponse
-            ) {
-                super.onReceivedHttpError(view, request, errorResponse)
-                if (request.isForMainFrame) {
-                    showError()
+                if (failingUrl == baseUrl || failingUrl.startsWith(baseUrl.substringBeforeLast("/"))) {
+                    showConnectionError()
                 }
             }
         }
-
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onProgressChanged(view: WebView, newProgress: Int) {
-                super.onProgressChanged(view, newProgress)
-                progressBar.progress = newProgress
-            }
-
-            override fun onPermissionRequest(request: PermissionRequest) {
-                val needsAudio = request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
-                if (!needsAudio) {
-                    request.deny()
-                    return
-                }
-                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO)
-                    == PackageManager.PERMISSION_GRANTED
-                ) {
-                    request.grant(request.resources)
-                } else {
-                    pendingPermissionRequest = request
-                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                }
-            }
-
-            override fun onShowFileChooser(
-                webView: WebView,
-                callback: android.webkit.ValueCallback<Array<Uri>>,
-                params: FileChooserParams
-            ): Boolean {
-                filePathCallback = callback
-                val intent = params.createIntent()
-                try {
-                    fileChooserLauncher.launch(intent)
-                } catch (e: Exception) {
-                    filePathCallback = null
-                    return false
-                }
-                return true
-            }
-        }
-
-        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
-            downloadFile(url, contentDisposition, mimeType)
-        }
-    }
-
-    private fun downloadFile(url: String, contentDisposition: String?, mimeType: String?) {
-        val request = DownloadManager.Request(Uri.parse(url))
-        val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
-        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-        request.allowScanningByMediaScanner()
-
-        // کوکی نشست را هم پاس می‌دهیم تا اگر لینک نیاز به نشست وب داشت، دانلود مستقیم هم کار کند.
-        val cookie = CookieManager.getInstance().getCookie(url)
-        if (cookie != null) {
-            request.addRequestHeader("Cookie", cookie)
-        }
-
-        val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        downloadManager.enqueue(request)
     }
 
     private fun loadApp() {
-        errorLayout.visibility = View.GONE
-        webView.visibility = View.VISIBLE
-        webView.loadUrl(baseUrl)
+        try {
+            errorLayout?.visibility = View.GONE
+            webView?.loadUrl(baseUrl)
+        } catch (e: Throwable) {
+            showFatalError("خطا در بارگذاری: ${e.javaClass.name}: ${e.message}")
+        }
     }
 
-    private fun setupBackPress() {
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (webView.canGoBack()) {
-                    webView.goBack()
-                } else {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                }
+    private fun showConnectionError() {
+        progressBar?.visibility = View.GONE
+        errorLayout?.visibility = View.VISIBLE
+    }
+
+    private fun showFatalError(msg: String) {
+        try {
+            val tv = TextView(this)
+            tv.text = msg
+            tv.setTextSize(16f)
+            tv.setPadding(24, 24, 24, 24)
+            setContentView(tv)
+        } catch (e: Throwable) {
+            // آخرین راه
+        }
+    }
+
+    private fun requestPermissionsCompat() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val missing = ArrayList<String>()
+                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+                    missing.add(Manifest.permission.RECORD_AUDIO)
+                if (Build.VERSION.SDK_INT >= 33 &&
+                    checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+                    missing.add(Manifest.permission.POST_NOTIFICATIONS)
+                if (missing.isNotEmpty())
+                    requestPermissions(missing.toTypedArray(), 100)
             }
-        })
+        } catch (e: Throwable) {
+            // بی‌خیال
+        }
     }
 
     private fun registerNetworkMonitor() {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-        networkCallback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                runOnUiThread {
-                    // اگر خطا داشتیم و اینترنت برگشت، خودکار دوباره بارگذاری کن
-                    if (webView.url.isNullOrEmpty() && errorLayout.visibility == View.VISIBLE) {
-                        loadApp()
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            networkCallback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    runOnUiThread {
+                        if (webView?.url.isNullOrEmpty() && errorLayout?.visibility == View.VISIBLE) {
+                            loadApp()
+                        }
                     }
                 }
             }
-        }
-        cm.registerNetworkCallback(request, networkCallback!!)
-    }
-
-    private fun requestInitialPermissions() {
-        // میکروفون برای فرمان صوتی
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
-        // اعلان‌ها در اندروید ۱۳+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
+            cm.registerNetworkCallback(request, networkCallback!!)
+        } catch (e: Throwable) {
+            // بی‌خیال
         }
     }
 
-    private fun showError() {
-        progressBar.visibility = View.GONE
-        webView.visibility = View.GONE
-        errorLayout.visibility = View.VISIBLE
+    override fun onBackPressed() {
+        val wv = webView
+        if (wv != null && wv.canGoBack()) {
+            wv.goBack()
+        } else {
+            super.onBackPressed()
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        networkCallback?.let {
-            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            try {
-                cm.unregisterNetworkCallback(it)
-            } catch (e: Exception) {
-                // نادیده بگیر
+        try {
+            networkCallback?.let {
+                (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
+                    .unregisterNetworkCallback(it)
             }
+        } catch (e: Throwable) {
+            // بی‌خیال
         }
     }
 }

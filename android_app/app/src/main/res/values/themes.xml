@@ -1,15 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- تم ساده‌ی سیستمی (بدون AppCompat) برای حداکثر سازگاری -->
 <resources>
-    <style name="Theme.Narin" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/narin_primary</item>
-        <item name="colorPrimaryDark">@color/narin_primary_dark</item>
+    <style name="Theme.Narin" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">@color/narin_primary</item>
+        <item name="android:colorPrimaryDark">@color/narin_primary_dark</item>
         <item name="android:windowBackground">@color/narin_background</item>
         <item name="android:statusBarColor">@color/narin_primary_dark</item>
-    </style>
-
-    <!-- تم اسپلش (لحظه‌ی قبل از بارگذاری MainActivity) -->
-    <style name="Theme.Narin.Splash" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="android:windowBackground">@drawable/splash_background</item>
-        <item name="android:statusBarColor">@color/splash_background</item>
     </style>
 </resources>

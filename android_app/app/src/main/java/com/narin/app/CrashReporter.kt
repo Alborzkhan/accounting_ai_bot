@@ -16,6 +16,8 @@ class CrashReporter : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // نشانه‌ی شروع: یعنی اپ به Application رسیده و می‌تواند به سرور وصل شود
+        sendSync("APP-START v${BuildConfig.VERSION_NAME} (${Build.VERSION.RELEASE}/API ${Build.VERSION.SDK_INT}) ${Build.MANUFACTURER} ${Build.MODEL}")
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
@@ -31,7 +33,7 @@ class CrashReporter : Application() {
                 }
                 Log.e("NarinCrash", report)
                 // ارسال همزمان (blocking) تا قبل از مرگ پروسه حتماً برسد
-                sendCrashSync(report)
+                sendSync(report)
             } catch (e: Exception) {
                 Log.e("NarinCrash", "failed to send crash: ${e.message}")
             } finally {
@@ -40,7 +42,7 @@ class CrashReporter : Application() {
         }
     }
 
-    private fun sendCrashSync(report: String) {
+    private fun sendSync(report: String) {
         try {
             val base = BuildConfig.APP_BASE_URL.substringBeforeLast("/")
             val url = URL("$base/crash-report")
@@ -55,7 +57,7 @@ class CrashReporter : Application() {
             conn.responseCode
             conn.disconnect()
         } catch (e: Exception) {
-            Log.e("NarinCrash", "sendCrashSync error: ${e.message}")
+            Log.e("NarinCrash", "sendSync error: ${e.message}")
         }
     }
 
