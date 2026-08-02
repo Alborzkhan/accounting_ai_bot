@@ -15,7 +15,9 @@ import android.os.Bundle
 import android.os.Environment
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.PermissionRequest
 import android.webkit.URLUtil
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -34,8 +36,10 @@ class MainActivity : Activity() {
     private var progressBar: ProgressBar? = null
     private var errorLayout: LinearLayout? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var pendingMicRequest: PermissionRequest? = null
 
     private val baseUrl: String get() = BuildConfig.APP_BASE_URL
+    private val REQ_MIC = 1001
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,6 +71,37 @@ class MainActivity : Activity() {
         settings.setSupportZoom(false)
 
         CookieManager.getInstance().setAcceptCookie(true)
+
+        // مدیریت مجوزهای وب (میکروفون برای فرمان صوتی)
+        wv.webChromeClient = object : WebChromeClient() {
+            override fun onPermissionRequest(request: PermissionRequest) {
+                if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
+                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        request.grant(request.resources)
+                    } else {
+                        pendingMicRequest = request
+                        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
+                    }
+                } else {
+                    request.deny()
+                }
+            }
+        }
+
+        // دانلود خودکار فایل (PDF فاکتورها) به پوشه‌ی Downloads
+        wv.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+            try {
+                val req = DownloadManager.Request(Uri.parse(url))
+                req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, URLUtil.guessFileName(url, contentDisposition, mimeType))
+                req.allowScanningByMediaScanner()
+                val cookie = CookieManager.getInstance().getCookie(url)
+                if (cookie != null) req.addRequestHeader("Cookie", cookie)
+                (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
+            } catch (e: Throwable) {
+                // بی‌خیال
+            }
+        }
 
         wv.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
@@ -118,19 +153,32 @@ class MainActivity : Activity() {
     }
 
     private fun requestPermissionsCompat() {
+        // میکروفون در اولین اجرا برای فرمان صوتی درخواست می‌شود
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val missing = ArrayList<String>()
-                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
-                    missing.add(Manifest.permission.RECORD_AUDIO)
-                if (Build.VERSION.SDK_INT >= 33 &&
-                    checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-                    missing.add(Manifest.permission.POST_NOTIFICATIONS)
-                if (missing.isNotEmpty())
-                    requestPermissions(missing.toTypedArray(), 100)
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
             }
         } catch (e: Throwable) {
             // بی‌خیال
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_MIC) {
+            val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            pendingMicRequest?.let { req ->
+                if (granted) {
+                    try { req.grant(req.resources) } catch (e: Throwable) { /* بی‌خیال */ }
+                } else {
+                    try { req.deny() } catch (e: Throwable) { /* بی‌خیال */ }
+                }
+            }
+            pendingMicRequest = null
         }
     }
 
