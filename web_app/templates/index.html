@@ -944,9 +944,23 @@
 
     <div id="invoiceStepDone" style="display:none;">
         <p id="invoiceDoneMessage" style="margin-bottom:14px;"></p>
-        <button type="button" id="invoicePdfLink" class="modal-btn modal-btn-primary" style="display:block;width:100%;margin-bottom:10px;">دانلود PDF فاکتور</button>
+        <button type="button" id="invoicePdfLink" class="modal-btn modal-btn-primary" style="display:block;width:100%;margin-bottom:10px;">📥 دانلود PDF فاکتور</button>
+        <button type="button" id="invoiceShareBtn" class="modal-btn" style="display:block;width:100%;margin-bottom:10px;">📤 ارسال / اشتراک‌گذاری</button>
         <button class="modal-btn" id="closeInvoiceDoneBtn">بستن</button>
     </div>
+</div>
+
+<!-- ===== باکس اشتراک‌گذاری فاکتور ===== -->
+<div id="shareLinksBox" style="display:none; position:fixed; left:20px; right:20px; bottom:30px; z-index:2200; background:#fff; border-radius:18px; padding:18px; box-shadow:0 10px 40px rgba(0,0,0,0.35);">
+    <div style="font-weight:800; font-size:15px; margin-bottom:4px; color:var(--ink);">ارسال فاکتور به:</div>
+    <div id="shareLinksTitle" style="font-size:12px; color:var(--ink-soft); margin-bottom:14px;"></div>
+    <div style="display:flex; flex-wrap:wrap; gap:10px; justify-content:center;">
+        <a id="shareWhatsapp" href="#" target="_blank" rel="noopener" class="modal-btn" style="background:#25D366; color:#fff; border:none; flex:1; min-width:100px; text-align:center; text-decoration:none;">واتساپ</a>
+        <a id="shareTelegram" href="#" target="_blank" rel="noopener" class="modal-btn" style="background:#229ED9; color:#fff; border:none; flex:1; min-width:100px; text-align:center; text-decoration:none;">تلگرام</a>
+        <a id="shareEmail" href="#" target="_blank" rel="noopener" class="modal-btn" style="background:#D44638; color:#fff; border:none; flex:1; min-width:100px; text-align:center; text-decoration:none;">ایمیل</a>
+    </div>
+    <button id="shareCopyLink" class="modal-btn" style="width:100%; margin-top:10px;">کپی لینک</button>
+    <button id="shareCloseBox" class="modal-btn" style="width:100%; margin-top:6px;">بستن</button>
 </div>
 
 <div id="supportSheet" class="sheet">
@@ -1345,6 +1359,9 @@
         }
     }
 
+    let lastInvoiceId = null;
+    let lastInvoiceDocType = 'sale';
+
     async function openInvoicePdf(invoiceId, docType) {
         try {
             const res = await fetch(`/invoice/${invoiceId}/pdf-token?type=${docType || 'sale'}`);
@@ -1361,6 +1378,88 @@
             showToast('دانلود فایل ناموفق بود.', true);
         }
     }
+
+    /* ===================== اشتراک‌گذاری فاکتور (تلگرام/واتساپ/ایمیل/...) ===================== */
+    async function getInvoiceFile(invoiceId, docType) {
+        const res = await fetch(`/invoice/${invoiceId}/pdf-token?type=${docType || 'sale'}`);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || 'خطا');
+        const fullUrl = location.origin + data.url;
+        // دریافت PDF به‌صورت Blob برای اشتراک‌گذاری بومی
+        let blob = null, fileName = `invoice-${invoiceId}.pdf`;
+        try {
+            const fres = await fetch(fullUrl);
+            if (fres.ok) {
+                blob = await fres.blob();
+                const cd = fres.headers.get('Content-Disposition') || '';
+                const m = cd.match(/filename="?([^";]+)"?/i);
+                if (m) fileName = m[1];
+            }
+        } catch (e) { blob = null; }
+        return { fullUrl, blob, fileName };
+    }
+
+    async function shareInvoice() {
+        if (!lastInvoiceId) { showToast('فاکتوری برای اشتراک‌گذاری نیست', true); return; }
+        let file;
+        try {
+            const { fullUrl, blob, fileName } = await getInvoiceFile(lastInvoiceId, lastInvoiceDocType);
+            // ۱) Web Share API با فایل → همه اپ‌های نصب‌شده نمایش داده می‌شوند
+            if (blob && blob.size > 0 && navigator.canShare && navigator.share) {
+                file = new File([blob], fileName, { type: 'application/pdf' });
+                if (navigator.canShare({ files: [file] })) {
+                    try {
+                        await navigator.share({
+                            files: [file],
+                            title: 'فاکتور نارین',
+                            text: `فاکتور ${fileName}`,
+                            url: fullUrl
+                        });
+                        return;
+                    } catch (e) { /* کاربر لغو کرد یا ناموفق - ادامه */ }
+                }
+            }
+            // ۲) Web Share بدون فایل
+            if (navigator.share) {
+                try {
+                    await navigator.share({ title: 'فاکتور نارین', text: 'مشاهده فاکتور', url: fullUrl });
+                    return;
+                } catch (e) { /* لغو - ادامه */ }
+            }
+            // ۳) لینک‌های مستقیم (واتساپ/تلگرام/ایمیل)
+            openShareLinks(fullUrl, fileName);
+        } catch (e) {
+            showToast('خطا در آماده‌سازی فاکتور برای اشتراک‌گذاری', true);
+        }
+    }
+
+    function openShareLinks(fullUrl, fileName) {
+        const msg = `فاکتور نارین ${fileName} - ${fullUrl}`;
+        document.getElementById('shareLinksTitle').textContent = fileName;
+        document.getElementById('shareWhatsapp').href = 'https://wa.me/?text=' + encodeURIComponent(msg);
+        document.getElementById('shareTelegram').href = 'https://t.me/share/url?url=' + encodeURIComponent(fullUrl) + '&text=' + encodeURIComponent('فاکتور نارین ' + fileName);
+        document.getElementById('shareEmail').href = 'mailto:?subject=' + encodeURIComponent('فاکتور نارین') + '&body=' + encodeURIComponent(msg);
+        document.getElementById('shareLinksBox').style.display = 'block';
+        document.getElementById('shareLinksBox').dataset.shareUrl = fullUrl;
+    }
+
+    document.getElementById('invoiceShareBtn').addEventListener('click', shareInvoice);
+    document.getElementById('shareCopyLink').addEventListener('click', () => {
+        const url = document.getElementById('shareLinksBox').dataset.shareUrl || '';
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url).then(() => showToast('لینک کپی شد', false));
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = url; document.body.appendChild(ta); ta.select();
+                document.execCommand('copy'); document.body.removeChild(ta);
+                showToast('لینک کپی شد', false);
+            }
+        } catch (e) { showToast('کپی ممکن نشد', true); }
+    });
+    document.getElementById('shareCloseBox').addEventListener('click', () => {
+        document.getElementById('shareLinksBox').style.display = 'none';
+    });
     function showToast(message, isError = false) {
         const toast = document.getElementById('toastMsg');
         toast.textContent = message;
@@ -2448,6 +2547,8 @@
                 document.getElementById('invoiceDoneMessage').textContent = data.message;
                 document.getElementById('invoicePdfLink').dataset.invoiceId = data.invoice_id;
                 document.getElementById('invoicePdfLink').dataset.docType = payload.document_type === 'purchase' ? 'purchase' : 'sale';
+                lastInvoiceId = data.invoice_id;
+                lastInvoiceDocType = payload.document_type === 'purchase' ? 'purchase' : 'sale';
                 updateGross();
                 fetchAccounts();
             } else if (data.warning) {
