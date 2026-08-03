@@ -1467,7 +1467,13 @@
         toast.style.color = isError ? '#a11' : '#2c6e2c';
         toast.classList.remove('show');
         setTimeout(() => toast.classList.add('show'), 10);
-        setTimeout(() => toast.classList.remove('show'), 3000);
+        setTimeout(() => {
+            toast.classList.remove('show');
+            // بعد از محو شدن، متن توست پاک شود تا در DOM باقی نماند
+            setTimeout(() => {
+                if (toast.textContent === message) toast.textContent = '';
+            }, 700);
+        }, 3000);
     }
 
     function msgOf(data, fallback) {

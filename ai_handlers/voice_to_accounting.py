@@ -34,72 +34,99 @@ class VoiceToAccounting:
     def transcribe_voice(self, audio_path: str) -> str:
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"فایل {audio_path} یافت نشد.")
-        result = self.model.transcribe(audio_path, language=None, task="transcribe")
+        # زبان را صریحاً فارسی می‌گیریم؛ در غیر این صورت Whisper روی صوت کوتاه/با لهجه ممکن است
+        # زبان را اشتباه تشخیص دهد و خروجی نامفهوم (مثلاً آلمانی) بدهد.
+        result = self.model.transcribe(audio_path, language="fa", task="transcribe")
         return result["text"]
     
     def extract_amount(self, text: str) -> int:
-        """استخراج مبلغ از متن با پشتیبانی از اعداد و حروف"""
-        text = text.replace(',', '')
-        
-        # تبدیل حروف به اعداد
+        """استخراج مبلغ از متن با پشتیبانی از اعداد فارسی/رقمی و رونویسی‌های رایج Whisper.
+
+        فقط عددی که بلافاصله با یک واحد پول (تومان/هزار/میلیون/...) همراه باشد به‌عنوان مبلغ
+        در نظر گرفته می‌شود تا اعداد کمیت (مثل «۵۰ عدد») با مبلغ اشتباه گرفته نشوند.
+        """
+        text = text.replace(',', '').strip()
+
+        # نرمال‌سازی واحدها: اشکال رونویسی‌شده‌ی «هزار تومان» (بدون «ه» ابتدا) به «هزارتومان»
+        # تبدیل شوند؛ با lookbehind تا داخل کلمه‌ی سالم «هزار» یا «بازار» دستکاری نشود.
+        text = re.sub(r'(?<!ه)زار\s*تومان', 'هزارتومان', text)
+        text = re.sub(r'(?<!ه)زارتومن\b', 'هزارتومان', text)
+        text = re.sub(r'(?<!ه)زارتومان\b', 'هزارتومان', text)
+        text = re.sub(r'(?<!ه)زارتوما\b', 'هزارتومان', text)
+        text = re.sub(r'(?<!ه)زارتوم\b', 'هزارتومان', text)
+        text = re.sub(r'(?<!\w)زار(?!\w)', 'هزار', text)   # «زار» تنها
+        text = re.sub(r'حزار\b', 'هزار', text)
+        text = re.sub(r'ميليونو', 'میلیون و', text)
+        text = re.sub(r'میلیونو', 'میلیون و', text)
+        text = re.sub(r'ميليون', 'میلیون', text)
+        text = re.sub(r'ميليارد', 'میلیارد', text)
+
         word_to_number = {
-            'یک': 1, 'دو': 2, 'سه': 3, 'چهار': 4, 'پنج': 5, 'پنچه': 5,
+            'یک': 1, 'دو': 2, 'سه': 3, 'چهار': 4, 'پنج': 5, 'پنچه': 5, 'پنجا': 50,
             'شش': 6, 'هفت': 7, 'هشت': 8, 'نه': 9, 'ده': 10,
             'یازده': 11, 'دوازده': 12, 'سیزده': 13, 'چهارده': 14, 'پانزده': 15,
             'شانزده': 16, 'هفده': 17, 'هجده': 18, 'نوزده': 19,
             'بیست': 20, 'سی': 30, 'چهل': 40, 'پنجاه': 50,
             'شصت': 60, 'هفتاد': 70, 'هشتاد': 80, 'نود': 90,
             'صد': 100, 'دویست': 200, 'سیصد': 300, 'چهارصد': 400,
-            'پانصد': 500, 'ششصد': 600, 'هفتصد': 700, 'هشتصد': 800,
-            'نهصد': 900, 'هزار': 1000, 'میلیون': 1_000_000, 'میلیارد': 1_000_000_000,
+            'پانصد': 500, 'پونصد': 500, 'پنصد': 500, 'ٹونست': 500,
+            'ششصد': 600, 'هفتصد': 700, 'هشتصد': 800,
+            'نهصد': 900,
+            'هزار': 1000, 'هزارتومان': 1000,
+            'میلیون': 1_000_000, 'میلیارد': 1_000_000_000,
         }
-        
+
         words = text.split()
-        total = 0
-        current = 0
-        for word in words:
-            if word in word_to_number:
-                num = word_to_number[word]
-                if num >= 1000:
-                    total += (current or 1) * num
-                    current = 0
-                elif num >= 100:
-                    current *= num
+        n = len(words)
+        result = 0
+        i = 0
+
+        def accumulate(start: int):
+            """جمع اعداد فارسی/رقمی پشت‌سرهم (با «و») تا رسیدن به غیرعدد"""
+            cur = 0
+            j = start
+            while j < n:
+                w = words[j]
+                if w in word_to_number and word_to_number[w] < 1000:
+                    cur = (cur + word_to_number[w]) if cur else word_to_number[w]
+                    j += 1
+                elif w.isdigit():
+                    cur = int(w)
+                    j += 1
+                elif w == 'و':
+                    j += 1
                 else:
-                    current += num
-            elif word == 'و':
-                continue
+                    break
+            return cur, j
+
+        while i < n:
+            w = words[i]
+            if (w in word_to_number and word_to_number[w] < 1000) or w.isdigit():
+                val, j = accumulate(i)
+                # فقط اگر بعد از عدد، واحد پول (مقیاس یا «تومان») آمده باشد، مبلغ است
+                if j < n and words[j] in word_to_number and word_to_number[words[j]] >= 1000:
+                    unit = word_to_number[words[j]]
+                    result += (val or 1) * unit
+                    i = j + 1
+                elif j < n and words[j] in ('تومان', 'تومن'):
+                    result += val
+                    i = j + 1
+                else:
+                    i = j
             else:
-                total += current
-                current = 0
-        total += current
-        if total > 0:
-            return total
-        
-        # الگوهای عددی
-        patterns = [
-            r'(\d+)\s*(?:تومان|هزار|میلیون)',
-            r'(\d+)\s*(?:toman|thousand|million)',
-            r'(\d+)\s*$',
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                amount = int(match.group(1))
-                if "هزار" in text or "thousand" in text or "زارتومن" in text:
-                    amount *= 1000
-                elif "میلیون" in text or "million" in text:
-                    amount *= 1_000_000
-                return amount
-        
+                i += 1
+
+        if result > 0:
+            return result
+
+        # بازگشت آخرین عدد ساده (اگر واحدی نبود ولی عددی در متن هست)
         numbers = re.findall(r'\d+', text)
         if numbers:
             amount = int(numbers[-1])
-            if 'زارتومن' in text or 'هزار' in text:
+            if any(u in text for u in ('زارتومن', 'زارتومان', 'هزارتومان', 'هزار', 'زارتوم')):
                 amount *= 1000
             return amount
-        
+
         return 0
     
     def voice_to_voucher(self, audio_path: str) -> Tuple[Dict, str]:
@@ -137,11 +164,12 @@ class VoiceToAccounting:
         
         # استخراج مبلغ
         data["amount"] = self.extract_amount(text)
-        
-        # اصلاح مبلغ اگر "زارتومن" در متن بود و مبلغ کمتر از 100 بود
-        if 'زارتومن' in text and data["amount"] < 100 and data["amount"] > 0:
-            data["amount"] = data["amount"] * 1000
-        
+
+        # پشتیبان: اگر واحدی از «هزار تومان» در متن بود ولی مبلغ کوچک استخراج شد، در ۱۰۰۰ ضرب کن
+        if data["amount"] < 100 and data["amount"] > 0:
+            if any(u in text for u in ('زارتومن', 'زارتومان', 'زار تومان', 'زارتوما', 'زارتوم', 'هزارتومان', 'هزار')):
+                data["amount"] = data["amount"] * 1000
+
         return data, text
 
 
