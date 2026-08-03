@@ -31,7 +31,7 @@ from core.inventory_reconciler import InventoryReconciler
 from core.platform_settings import PlatformSettingsManager
 from core.building_manager import BuildingManager
 from core.sms_service import test_sms_connection
-from core.ai_voucher_fallback import try_ai_voucher
+from core.ai_voucher_fallback import try_ai_voucher, create_vouchers_multi, split_transactions
 from core.dashboard_service import DashboardService
 from core.financial_reports import FinancialReports
 from core.budget_manager import BudgetManager
@@ -230,6 +230,11 @@ async def create_voucher(request: Request, description: str = Form(...),
     if not license_status["allowed"]:
         return {"success": False, "message": license_status["message"]}
     try:
+        # اگر متن چند تراکنش داشته باشد، هر بخش جدا با هوش مصنوعی ثبت می‌شود
+        if len(split_transactions(description)) > 1:
+            multi_result = create_vouchers_multi(engine, description, user_id)
+            return {"success": multi_result.get("success", False),
+                    "message": multi_result.get("message", "تراکنش‌های پیام تشخیص داده نشد.")}
         result = text_handler.parse_and_create_voucher(description, user_id=user_id,
                                                         income_account=income_account,
                                                         expense_account=expense_account)
@@ -264,7 +269,8 @@ async def process_voice(request: Request, voice: UploadFile = File(...)) -> dict
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
-        if data["type"] and data["amount"] > 0:
+        # یک تراکنش ساده و روشن → ثبت مستقیم با قوانین
+        if data["type"] and data["amount"] > 0 and len(split_transactions(transcript)) <= 1:
             entry_id = engine.create_voucher(
                 date=datetime.now(),
                 description=data["description"],
@@ -281,15 +287,18 @@ async def process_voice(request: Request, voice: UploadFile = File(...)) -> dict
                 "type": data["type"]
             }
 
-        ai_result = try_ai_voucher(engine, transcript, user_id)
-        if ai_result.get("success"):
-            return {
-                "success": True,
-                "message": ai_result["message"],
-                "amount": ai_result["amount"],
-                "type": ai_result["type"],
-            }
-        return {"success": False, "message": "اطلاعات ناقص است. لطفاً واضح‌تر صحبت کنید."}
+        # چندتراکنشی یا تشخیص قانونی ناقص → هوش مصنوعی؛ اگر چند تراکنش باشد هر بخش جدا ثبت می‌شود
+        multi_result = await asyncio.to_thread(create_vouchers_multi, engine, transcript, user_id)
+        if multi_result.get("success"):
+            resp = {"success": True, "message": multi_result["message"]}
+            if "count" in multi_result:
+                resp["count"] = multi_result["count"]
+                resp["type"] = "multiple"
+            else:
+                resp["amount"] = multi_result.get("amount")
+                resp["type"] = multi_result.get("type", "")
+            return resp
+        return {"success": False, "message": multi_result.get("message", "اطلاعات ناقص است. لطفاً واضح‌تر صحبت کنید.")}
     except Exception:
         logger.exception("process_voice failed for user_id=%s", user_id)
         return {"success": False, "message": "خطا در پردازش صدا. لطفاً دوباره تلاش کنید."}

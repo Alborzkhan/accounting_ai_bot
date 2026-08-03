@@ -246,7 +246,15 @@ class LLMProcessor:
     def process(self, text: str) -> dict:
         self._load_config()
         if self.api_key:
-            return self._call_cloud(text, LLM_SYSTEM_PROMPT)
+            result = self._call_cloud(text, LLM_SYSTEM_PROMPT)
+            if result.get("success"):
+                return result
+            # اگر سرویس ابری در دسترس نبود/خطا داد، به Ollama محلی برگرد
+            if self.use_ollama:
+                local = self._call_ollama(text)
+                if local.get("success"):
+                    return local
+            return result
         if self.use_ollama:
             return self._call_ollama(text)
         return {"success": False, "error": "no_api_key"}
@@ -357,7 +365,7 @@ class LLMProcessor:
                     "temperature": 0.1,
                     "max_tokens": 300
                 },
-                timeout=20
+                timeout=60
             )
             data = resp.json()
             if "choices" not in data:
@@ -384,7 +392,7 @@ class LLMProcessor:
                     "max_tokens": 500,
                     "temperature": 0.1
                 },
-                timeout=20
+                timeout=60
             )
             data = resp.json()
             if "content" not in data:
